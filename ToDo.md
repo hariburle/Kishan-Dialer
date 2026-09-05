@@ -1,4 +1,11 @@
-# Kishan Dialer — Feature Roadmap & To-Do
+ement# Kishan Dialer — Feature Roadmap & To-Do
+
+## Pending
+i am able to assign same speed dial number to multiple contacts and how do the speed dials work ? its not very clear
+when calling a number why am i having to select my google account first ? can we make that default selection once or use what the contact application users?
+can you initiate the whatsapp call directly why are you showing me the contact and expecting me to hit the audio call button ? 
+showing the edit and delete on fav cards is making it look very cluttered lets group edit, delete, reorder and any other management into the Reorder panel and may be change it to configure icon.
+
 
 ## 1. Advanced Caller ID & Spam Protection (Truecaller Essentials)
 - [ ] **Live Community-Sourced Caller ID**: Identify unknown numbers in real time using a crowd-sourced / cloud database, even when numbers are not saved in local device contacts.
@@ -18,6 +25,8 @@
 ---
 
 ## 3. Enhanced Dialer & Contact UX
+- [x] **Aggregated & Clean Contact Directory UX**: Group multiple phone numbers per contact into a single clean person row (eliminates duplicate rows and removes raw number clutter from the main view), with expandable detail view for multiple numbers, SMS, WhatsApp, and automation shortcuts.
+- [x] **Device Contacts as Single Source of Truth**: Bi-directional sync with Android Contacts database for starred status, nicknames, and real-time edits.
 - [x] **Dedicated Contacts Directory with A-Z Alphabet Scroller**: Clean iOS/Android-style alphabet indexed contacts list with real-time search, SMS & call triggers.
 - [x] **VIP Favorites Hub & 2x2 Speed Dial Grid**: Quick-access favorite cards, visual photo monograms, custom labels, and speed dial slot assignments (Keys 2-9).
 - [x] **One-Tap Star Favoriting**: Instant favorite toggling across Recents, Contacts, and Dialer screens with local Room persistence.

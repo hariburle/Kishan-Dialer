@@ -6,6 +6,11 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.ContactsContract
 
+data class ContactPhoneNumber(
+    val number: String,
+    val label: String = "Mobile"
+)
+
 data class DeviceContact(
     val name: String,
     val phoneNumber: String,
@@ -13,7 +18,8 @@ data class DeviceContact(
     val photoUri: String? = null,
     val contactId: Long? = null,
     val nickname: String? = null,
-    val isStarred: Boolean = false
+    val isStarred: Boolean = false,
+    val phoneNumbers: List<ContactPhoneNumber> = if (phoneNumber.isNotBlank()) listOf(ContactPhoneNumber(phoneNumber, label)) else emptyList()
 )
 
 object ContactHelper {
@@ -395,8 +401,8 @@ object ContactHelper {
     }
 
     fun fetchDeviceContacts(context: Context): List<DeviceContact> {
-        val contactList = mutableListOf<DeviceContact>()
         val nicknameMap = fetchNicknameMap(context)
+        val contactsMap = linkedMapOf<String, DeviceContactAccumulator>()
         var cursor: Cursor? = null
         try {
             val projection = arrayOf(
@@ -421,36 +427,35 @@ object ContactHelper {
                 val typeIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.TYPE)
                 val photoIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
                 val thumbIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
-                val seenNumbers = mutableSetOf<String>()
 
                 while (it.moveToNext()) {
                     val contactId = if (cidIdx != -1) it.getLong(cidIdx) else null
                     val fullName = if (nameIdx != -1) it.getString(nameIdx) ?: "Unknown" else "Unknown"
                     val number = if (numIdx != -1) it.getString(numIdx) ?: "" else ""
                     val cleanNum = number.replace(Regex("[^0-9+]"), "")
-                    if (cleanNum.isNotEmpty() && seenNumbers.add(cleanNum)) {
+                    if (cleanNum.isEmpty()) continue
+
+                    val type = if (typeIdx != -1) it.getInt(typeIdx) else ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
+                    val label = when (type) {
+                        ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Home"
+                        ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Work"
+                        else -> "Mobile"
+                    }
+                    val photo = if (photoIdx != -1) it.getString(photoIdx) else null
+                    val thumb = if (thumbIdx != -1) it.getString(thumbIdx) else null
+
+                    val key = contactId?.toString() ?: fullName.trim().lowercase()
+                    val accumulator = contactsMap.getOrPut(key) {
                         val nickname = if (contactId != null) nicknameMap[contactId] else null
                         val displayName = if (!nickname.isNullOrBlank()) nickname else fullName
-                        val type = if (typeIdx != -1) it.getInt(typeIdx) else ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
-                        val label = when (type) {
-                            ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Home"
-                            ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Work"
-                            else -> "Mobile"
-                        }
-                        val photo = if (photoIdx != -1) it.getString(photoIdx) else null
-                        val thumb = if (thumbIdx != -1) it.getString(thumbIdx) else null
-
-                        contactList.add(
-                            DeviceContact(
-                                name = displayName,
-                                phoneNumber = number,
-                                label = label,
-                                photoUri = photo ?: thumb,
-                                contactId = contactId,
-                                nickname = nickname
-                            )
+                        DeviceContactAccumulator(
+                            name = displayName,
+                            photoUri = photo ?: thumb,
+                            contactId = contactId,
+                            nickname = nickname
                         )
                     }
+                    accumulator.addNumber(number, label)
                 }
             }
         } catch (e: SecurityException) {
@@ -460,6 +465,36 @@ object ContactHelper {
         } finally {
             cursor?.close()
         }
-        return contactList
+        return contactsMap.values.map { it.toDeviceContact() }
+    }
+}
+
+private class DeviceContactAccumulator(
+    val name: String,
+    val photoUri: String?,
+    val contactId: Long?,
+    val nickname: String?
+) {
+    private val numbers = mutableListOf<ContactPhoneNumber>()
+    private val seen = mutableSetOf<String>()
+
+    fun addNumber(number: String, label: String) {
+        val clean = number.replace(Regex("[^0-9+]"), "")
+        if (clean.isNotEmpty() && seen.add(clean)) {
+            numbers.add(ContactPhoneNumber(number, label))
+        }
+    }
+
+    fun toDeviceContact(): DeviceContact {
+        val primary = numbers.firstOrNull()
+        return DeviceContact(
+            name = name,
+            phoneNumber = primary?.number ?: "",
+            label = primary?.label ?: "Mobile",
+            photoUri = photoUri,
+            contactId = contactId,
+            nickname = nickname,
+            phoneNumbers = numbers.toList()
+        )
     }
 }

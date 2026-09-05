@@ -104,13 +104,13 @@ fun FavoritesScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isReorderMode) "Reorder Favorites" else "VIP & Speed Dial Favorites",
+                    text = if (isReorderMode) "Reorder" else "Favorites",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = if (isReorderMode) "Use arrows on cards to arrange" else "One-tap speed calling & dialpad shortcuts",
+                    text = if (isReorderMode) "Use arrows to arrange" else "Speed dial shortcuts",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -120,22 +120,20 @@ fun FavoritesScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Reorder toggle button
+                // Reorder toggle icon button
                 if (favorites.size > 1) {
-                    FilledTonalButton(
+                    FilledIconButton(
                         onClick = { isReorderMode = !isReorderMode },
-                        modifier = Modifier.testTag("fav_screen_reorder_button"),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        modifier = Modifier.size(38.dp).testTag("fav_screen_reorder_button"),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isReorderMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
                         Icon(
                             imageVector = if (isReorderMode) Icons.Default.Check else Icons.Default.DragHandle,
                             contentDescription = if (isReorderMode) "Done Reordering" else "Reorder",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isReorderMode) "Done" else "Reorder",
-                            style = MaterialTheme.typography.labelMedium
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

@@ -164,60 +164,67 @@ fun DialerScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Matched contact pill if number is recognized
-            if (matchedContact != null) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
-                        .background(
-                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                            RoundedCornerShape(20.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        if (!matchedContact!!.photoUri.isNullOrBlank()) {
-                            coil.compose.AsyncImage(
-                                model = matchedContact!!.photoUri,
-                                contentDescription = matchedContact!!.name,
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+            // Matched contact pill or Add to Favorites chip in fixed-height container to prevent keypad jumping
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (matchedContact != null) {
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                                RoundedCornerShape(20.dp)
                             )
-                        } else {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = matchedContact!!.name.take(1).uppercase(),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            if (!matchedContact!!.photoUri.isNullOrBlank()) {
+                                coil.compose.AsyncImage(
+                                    model = matchedContact!!.photoUri,
+                                    contentDescription = matchedContact!!.name,
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = matchedContact!!.name.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
                             }
                         }
+                        Text(
+                            text = matchedContact!!.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "• ${matchedContact!!.label}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Text(
-                        text = matchedContact!!.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "• ${matchedContact!!.label}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                } else if (number.length >= 3) {
+                    AssistChip(
+                        onClick = { showAddFavoriteDialog = true },
+                        label = { Text("Add to Favorites", fontSize = 11.sp) },
+                        modifier = Modifier.height(32.dp)
                     )
                 }
-            } else if (number.length >= 3) {
-                AssistChip(
-                    onClick = { showAddFavoriteDialog = true },
-                    label = { Text("Add to Favorites", fontSize = 11.sp) },
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
             }
 
             // Dialed Number Display Area with Contact Picker & Backspace
@@ -377,25 +384,32 @@ fun DialerScreen(
                 }
             }
 
-            if (speedDialToast != null) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.inverseSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = speedDialToast ?: "",
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+            // Speed dial toast / feedback message container with fixed height
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (speedDialToast != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.inverseSurface
+                    ) {
+                        Text(
+                            text = speedDialToast ?: "",
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
             // Main Telephone Keypad with Speed Dial Long-Press
             Keypad(
+                compact = true,
                 onDigitPress = onDigitPress,
                 onDigitLongPress = { digit ->
                     when (digit) {

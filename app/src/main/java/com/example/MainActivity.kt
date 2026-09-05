@@ -1,0 +1,354 @@
+package com.example
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.MainViewModel
+import com.example.ui.screens.CallLogScreen
+import com.example.ui.screens.ContactsScreen
+import com.example.ui.screens.DialerScreen
+import com.example.ui.screens.FavoritesScreen
+import com.example.ui.screens.InCallScreen
+import com.example.ui.screens.RulesScreen
+import com.example.ui.theme.MyApplicationTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: MainViewModel by viewModels {
+        MainViewModel.provideFactory(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        handleDialIntent(intent)
+
+        setContent {
+            MyApplicationTheme {
+                MainAppContent(
+                    viewModel = viewModel,
+                    onOpenDialNumber = { number ->
+                        viewModel.setDialerNumber(number)
+                    }
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDialIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshDefaultDialerStatus()
+    }
+
+    private fun handleDialIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        val data: Uri? = intent.data
+
+        if (action == Intent.ACTION_DIAL || action == Intent.ACTION_VIEW || action == Intent.ACTION_CALL) {
+            data?.schemeSpecificPart?.let { rawNumber ->
+                viewModel.setDialerNumber(rawNumber)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainAppContent(
+    viewModel: MainViewModel,
+    onOpenDialNumber: (String) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var ruleNumberToCreate by remember { mutableStateOf<String?>(null) }
+
+    // Collect States
+    val dialerNumber by viewModel.dialerNumber.collectAsStateWithLifecycle()
+    val isDefaultDialer by viewModel.isDefaultDialer.collectAsStateWithLifecycle()
+    val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
+    val isMuted by viewModel.isMuted.collectAsStateWithLifecycle()
+    val isSpeakerOn by viewModel.isSpeakerOn.collectAsStateWithLifecycle()
+    val automationStep by viewModel.automationState.collectAsStateWithLifecycle()
+    val lastDtmfKey by viewModel.lastDtmfKey.collectAsStateWithLifecycle()
+    val showInCallKeypad by viewModel.showInCallKeypad.collectAsStateWithLifecycle()
+
+    val rules by viewModel.rules.collectAsStateWithLifecycle()
+    val recentCalls by viewModel.recentCalls.collectAsStateWithLifecycle()
+    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val spamNumbers by viewModel.spamNumbers.collectAsStateWithLifecycle()
+    val automationLogs by viewModel.automationLogs.collectAsStateWithLifecycle()
+    val selectedSimSlot by viewModel.selectedSimSlot.collectAsStateWithLifecycle()
+
+    // Request necessary runtime permissions
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        viewModel.refreshDefaultDialerStatus()
+        viewModel.syncWithDeviceContacts()
+    }
+
+    LaunchedEffect(Unit) {
+        val permissions = mutableListOf(
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.WRITE_CONTACTS,
+            Manifest.permission.SEND_SMS
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val ungranted = permissions.filter {
+            context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (ungranted.isNotEmpty()) {
+            permissionLauncher.launch(ungranted.toTypedArray())
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(
+                            text = "Kishan Dialer",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            },
+            bottomBar = {
+                NavigationBar(modifier = Modifier.testTag("bottom_nav_bar")) {
+                    NavigationBarItem(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
+                        label = { Text("Favorites") },
+                        modifier = Modifier.testTag("nav_favorites")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
+                        label = { Text("Recents") },
+                        modifier = Modifier.testTag("nav_recents")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        icon = { Icon(Icons.Default.Dialpad, contentDescription = "Keypad") },
+                        label = { Text("Keypad") },
+                        modifier = Modifier.testTag("nav_keypad")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
+                        icon = { Icon(Icons.Default.Contacts, contentDescription = "Contacts") },
+                        label = { Text("Contacts") },
+                        modifier = Modifier.testTag("nav_contacts")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
+                        icon = { Icon(Icons.Default.SmartToy, contentDescription = "Rules") },
+                        label = { Text("Auto-Rules") },
+                        modifier = Modifier.testTag("nav_rules")
+                    )
+                }
+            }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                when (selectedTab) {
+                    0 -> FavoritesScreen(
+                        favorites = favorites,
+                        onSelectNumber = { num ->
+                            viewModel.setDialerNumber(num)
+                            selectedTab = 2
+                        },
+                        onCallNumber = { num ->
+                            viewModel.setDialerNumber(num)
+                            viewModel.placeCall(context, num)
+                        },
+                        onCreateRule = { num ->
+                            ruleNumberToCreate = num
+                            selectedTab = 4
+                        },
+                        onDeleteFavorite = { fav -> viewModel.deleteFavorite(fav) },
+                        onAddFavorite = { name, num, label, photoUri ->
+                            viewModel.addFavorite(name, num, label, photoUri)
+                        },
+                        onAssignSpeedDial = { contact, slot ->
+                            viewModel.assignSpeedDial(contact, slot)
+                        },
+                        onMoveFavorite = { fromIndex, toIndex ->
+                            viewModel.moveFavorite(fromIndex, toIndex)
+                        },
+                        onEditFavorite = { contact, newNickname ->
+                            viewModel.updateFavorite(contact, newNickname)
+                        }
+                    )
+                    1 -> CallLogScreen(
+                        recentCalls = recentCalls,
+                        spamNumbers = spamNumbers,
+                        favorites = favorites,
+                        onCallBack = { num ->
+                            viewModel.setDialerNumber(num)
+                            selectedTab = 2
+                            viewModel.placeCall(context, num)
+                        },
+                        onCreateRuleForNumber = { num ->
+                            ruleNumberToCreate = num
+                            selectedTab = 4
+                        },
+                        onMarkSpam = { num -> viewModel.markAsSpam(num) },
+                        onRemoveSpam = { num -> viewModel.removeSpam(num) },
+                        onToggleFavorite = { name, num, label, photoUri ->
+                            viewModel.toggleFavorite(name, num, label, photoUri)
+                        }
+                    )
+                    2 -> DialerScreen(
+                        number = dialerNumber,
+                        favorites = favorites,
+                        isDefaultDialer = isDefaultDialer,
+                        context = context,
+                        simSlot = selectedSimSlot,
+                        onToggleSim = { viewModel.toggleSimSlot() },
+                        onRoleChanged = { viewModel.refreshDefaultDialerStatus() },
+                        onDigitPress = { viewModel.appendDigit(it) },
+                        onDeleteDigit = { viewModel.deleteLastDigit() },
+                        onClearDigits = { viewModel.clearDigits() },
+                        onSelectContactNumber = { num -> viewModel.setDialerNumber(num) },
+                        onPlaceCall = { num -> viewModel.placeCall(context, num) },
+                        onSimulateCall = { num, name -> viewModel.simulateIncomingCall(context, num, name) },
+                        onCreateRuleForNumber = { num ->
+                            ruleNumberToCreate = num
+                            selectedTab = 4
+                        },
+                        onAddFavorite = { name, num, label, photoUri ->
+                            viewModel.addFavorite(name, num, label, photoUri)
+                        },
+                        onDeleteFavorite = { fav ->
+                            viewModel.deleteFavorite(fav)
+                        }
+                    )
+                    3 -> ContactsScreen(
+                        favorites = favorites,
+                        onSelectNumber = { num ->
+                            viewModel.setDialerNumber(num)
+                            selectedTab = 2
+                        },
+                        onCallNumber = { num ->
+                            viewModel.setDialerNumber(num)
+                            viewModel.placeCall(context, num)
+                        },
+                        onCreateRule = { num ->
+                            ruleNumberToCreate = num
+                            selectedTab = 4
+                        },
+                        onToggleFavorite = { name, num, label, photoUri ->
+                            viewModel.toggleFavorite(name, num, label, photoUri)
+                        },
+                        onAddFavorite = { name, num, label, photoUri ->
+                            viewModel.addFavorite(name, num, label, photoUri)
+                        }
+                    )
+                    4 -> RulesScreen(
+                        rules = rules,
+                        automationLogs = automationLogs,
+                        favorites = favorites,
+                        onToggleRule = { viewModel.toggleRuleEnabled(it) },
+                        onSaveRule = { viewModel.saveRule(it) },
+                        onDeleteRule = { viewModel.deleteRule(it) },
+                        onClearLogs = { viewModel.clearLogs() },
+                        initiallyShowAddRuleWithNumber = ruleNumberToCreate
+                    )
+                }
+            }
+        }
+
+        // Active In-Call Overlay Screen (Appears seamlessly over UI whenever call is active/ringing)
+        AnimatedVisibility(
+            visible = activeCall != null,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            activeCall?.let { call ->
+                InCallScreen(
+                    callInfo = call,
+                    isMuted = isMuted,
+                    isSpeakerOn = isSpeakerOn,
+                    automationStep = automationStep,
+                    lastDtmfKey = lastDtmfKey,
+                    showKeypad = showInCallKeypad,
+                    onToggleKeypad = { viewModel.toggleInCallKeypad() },
+                    onAnswer = { viewModel.answerCall() },
+                    onDecline = { viewModel.declineCall() },
+                    onDisconnect = { viewModel.disconnectCall() },
+                    onToggleMute = { viewModel.toggleMute() },
+                    onToggleSpeaker = { viewModel.toggleSpeaker() },
+                    onPlayDtmf = { viewModel.playDtmf(it) },
+                    onStopDtmf = { viewModel.stopDtmf() }
+                )
+            }
+        }
+    }
+}

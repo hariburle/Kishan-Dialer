@@ -15,23 +15,33 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +53,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.telecom.RoleHelper
 import com.example.ui.MainViewModel
 import com.example.ui.screens.CallLogScreen
 import com.example.ui.screens.ContactsScreen
@@ -63,12 +75,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val tabExtra = intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
         handleDialIntent(intent)
 
         setContent {
             MyApplicationTheme {
                 MainAppContent(
                     viewModel = viewModel,
+                    initialTab = tabExtra,
                     onOpenDialNumber = { number ->
                         viewModel.setDialerNumber(number)
                     }
@@ -105,10 +119,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppContent(
     viewModel: MainViewModel,
+    initialTab: Int = 0,
     onOpenDialNumber: (String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
     var ruleNumberToCreate by remember { mutableStateOf<String?>(null) }
 
     // Collect States
@@ -120,6 +135,9 @@ fun MainAppContent(
     val automationStep by viewModel.automationState.collectAsStateWithLifecycle()
     val lastDtmfKey by viewModel.lastDtmfKey.collectAsStateWithLifecycle()
     val showInCallKeypad by viewModel.showInCallKeypad.collectAsStateWithLifecycle()
+    val currentAudioRoute by viewModel.currentAudioRoute.collectAsStateWithLifecycle()
+    val supportedAudioRoutes by viewModel.supportedAudioRoutes.collectAsStateWithLifecycle()
+    val bluetoothDeviceName by viewModel.bluetoothDeviceName.collectAsStateWithLifecycle()
 
     val rules by viewModel.rules.collectAsStateWithLifecycle()
     val recentCalls by viewModel.recentCalls.collectAsStateWithLifecycle()
@@ -127,12 +145,24 @@ fun MainAppContent(
     val spamNumbers by viewModel.spamNumbers.collectAsStateWithLifecycle()
     val automationLogs by viewModel.automationLogs.collectAsStateWithLifecycle()
     val selectedSimSlot by viewModel.selectedSimSlot.collectAsStateWithLifecycle()
+    val activeSims by viewModel.activeSims.collectAsStateWithLifecycle()
+    val pendingCloudConfirmation by viewModel.pendingCloudConfirmation.collectAsStateWithLifecycle()
+
+    var showDefaultAppPrompt by remember { mutableStateOf(true) }
+
+    val defaultDialerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.refreshDefaultDialerStatus()
+        viewModel.refreshSimCards()
+    }
 
     // Request necessary runtime permissions
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) {
         viewModel.refreshDefaultDialerStatus()
+        viewModel.refreshSimCards()
         viewModel.syncWithDeviceContacts()
     }
 
@@ -204,9 +234,12 @@ fun MainAppContent(
                     )
                     NavigationBarItem(
                         selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
+                        onClick = {
+                            ruleNumberToCreate = null
+                            selectedTab = 4
+                        },
                         icon = { Icon(Icons.Default.SmartToy, contentDescription = "Rules") },
-                        label = { Text("Auto-Rules") },
+                        label = { Text("Rules") },
                         modifier = Modifier.testTag("nav_rules")
                     )
                 }
@@ -244,6 +277,9 @@ fun MainAppContent(
                         },
                         onEditFavorite = { contact, newNickname ->
                             viewModel.updateFavorite(contact, newNickname)
+                        },
+                        onUpdateFavoriteNumber = { contact, newNum, newLabel ->
+                            viewModel.updateFavoritePhoneNumber(contact, newNum, newLabel)
                         }
                     )
                     1 -> CallLogScreen(
@@ -263,6 +299,9 @@ fun MainAppContent(
                         onRemoveSpam = { num -> viewModel.removeSpam(num) },
                         onToggleFavorite = { name, num, label, photoUri ->
                             viewModel.toggleFavorite(name, num, label, photoUri)
+                        },
+                        onUpdateNoteAndReminder = { call, note, rem ->
+                            viewModel.updateRecentCallNoteAndReminder(call, note, rem)
                         }
                     )
                     2 -> DialerScreen(
@@ -271,13 +310,14 @@ fun MainAppContent(
                         isDefaultDialer = isDefaultDialer,
                         context = context,
                         simSlot = selectedSimSlot,
+                        activeSims = activeSims,
                         onToggleSim = { viewModel.toggleSimSlot() },
                         onRoleChanged = { viewModel.refreshDefaultDialerStatus() },
                         onDigitPress = { viewModel.appendDigit(it) },
                         onDeleteDigit = { viewModel.deleteLastDigit() },
                         onClearDigits = { viewModel.clearDigits() },
                         onSelectContactNumber = { num -> viewModel.setDialerNumber(num) },
-                        onPlaceCall = { num -> viewModel.placeCall(context, num) },
+                        onPlaceCall = { num, reason -> viewModel.placeCall(context, num, reason) },
                         onSimulateCall = { num, name -> viewModel.simulateIncomingCall(context, num, name) },
                         onCreateRuleForNumber = { num ->
                             ruleNumberToCreate = num
@@ -309,6 +349,21 @@ fun MainAppContent(
                         },
                         onAddFavorite = { name, num, label, photoUri ->
                             viewModel.addFavorite(name, num, label, photoUri)
+                        },
+                        onUpdateFavoriteNumber = { contact, newNum, newLabel ->
+                            viewModel.updateFavoritePhoneNumber(contact, newNum, newLabel)
+                        },
+                        onAddNewContact = { name, num, label, destination, addToFavs ->
+                            viewModel.createNewContact(
+                                name = name,
+                                phoneNumber = num,
+                                label = label,
+                                saveToDevice = destination == com.example.ui.components.ContactSaveDestination.GOOGLE_DEVICE,
+                                addToFavorites = addToFavs
+                            )
+                        },
+                        onSyncContactToGoogle = { contact ->
+                            viewModel.syncAppContactToGoogle(contact)
                         }
                     )
                     4 -> RulesScreen(
@@ -319,7 +374,8 @@ fun MainAppContent(
                         onSaveRule = { viewModel.saveRule(it) },
                         onDeleteRule = { viewModel.deleteRule(it) },
                         onClearLogs = { viewModel.clearLogs() },
-                        initiallyShowAddRuleWithNumber = ruleNumberToCreate
+                        initiallyShowAddRuleWithNumber = ruleNumberToCreate,
+                        onConsumeAddRuleNumber = { ruleNumberToCreate = null }
                     )
                 }
             }
@@ -345,10 +401,146 @@ fun MainAppContent(
                     onDisconnect = { viewModel.disconnectCall() },
                     onToggleMute = { viewModel.toggleMute() },
                     onToggleSpeaker = { viewModel.toggleSpeaker() },
+                    audioRoute = currentAudioRoute,
+                    supportedAudioRoutes = supportedAudioRoutes,
+                    bluetoothDeviceName = bluetoothDeviceName,
+                    onSelectAudioRoute = { route -> viewModel.setAudioRoute(route) },
                     onPlayDtmf = { viewModel.playDtmf(it) },
-                    onStopDtmf = { viewModel.stopDtmf() }
+                    onStopDtmf = { viewModel.stopDtmf() },
+                    onDeclineWithSms = { msg -> viewModel.declineWithSms(msg) },
+                    onSavePostCallNote = { note, reminderMinutes ->
+                        val reminderTime = reminderMinutes?.let { System.currentTimeMillis() + it * 60 * 1000 }
+                        viewModel.savePostCallNote(call.phoneNumber, note, reminderTime)
+                    },
+                    onDismiss = { viewModel.dismissCall() }
                 )
             }
+        }
+
+        // Explicit Confirmation Dialog before making any changes to Google Account Contacts in the Cloud
+        pendingCloudConfirmation?.let { conf ->
+            AlertDialog(
+                onDismissRequest = {
+                    conf.onDismissOrCancel()
+                    viewModel.clearCloudConfirmation()
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = conf.title,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                text = {
+                    Text(
+                        text = conf.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            conf.onConfirmCloudAction()
+                            viewModel.clearCloudConfirmation()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(conf.confirmButtonText)
+                    }
+                },
+                dismissButton = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        if (conf.secondaryButtonText != null && conf.onSecondaryAction != null) {
+                            FilledTonalButton(
+                                onClick = {
+                                    conf.onSecondaryAction.invoke()
+                                    viewModel.clearCloudConfirmation()
+                                }
+                            ) {
+                                Text(conf.secondaryButtonText)
+                            }
+                        }
+                        TextButton(
+                            onClick = {
+                                conf.onDismissOrCancel()
+                                viewModel.clearCloudConfirmation()
+                            }
+                        ) {
+                            Text(conf.dismissButtonText)
+                        }
+                    }
+                }
+            )
+        }
+
+        // Check if Kishan Dialer is the default app on startup, and prompt user if not
+        if (!isDefaultDialer && showDefaultAppPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDefaultAppPrompt = false
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Phone,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "Set as Default Phone App",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Kishan Dialer is not your default phone app. To answer calls, screen spam, and use speed dials seamlessly, please set Kishan Dialer as your default app.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val intent = RoleHelper.createDefaultDialerIntent(context)
+                            if (intent != null) {
+                                defaultDialerLauncher.launch(intent)
+                            }
+                            showDefaultAppPrompt = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("Set as Default")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDefaultAppPrompt = false
+                        }
+                    ) {
+                        Text("Later")
+                    }
+                }
+            )
         }
     }
 }

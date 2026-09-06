@@ -1,17 +1,35 @@
-ement# Kishan Dialer — Feature Roadmap & To-Do
+# Kishan Dialer — Feature Roadmap & ToDo
 
-## Pending
-i am able to assign same speed dial number to multiple contacts and how do the speed dials work ? its not very clear
-when calling a number why am i having to select my google account first ? can we make that default selection once or use what the contact application users?
-can you initiate the whatsapp call directly why are you showing me the contact and expecting me to hit the audio call button ? 
-showing the edit and delete on fav cards is making it look very cluttered lets group edit, delete, reorder and any other management into the Reorder panel and may be change it to configure icon.
+## User Request Status & Resolutions
+
+- [x] **Post-Call Notes Persistence**: Resolved. `savePostCallNote()` matches the latest call record for that phone number in Room and commits the note and reminder timestamp immediately.
+- [x] **Recent Call UI & Label Wrapping**: Resolved. Enforced `softWrap = false`, `maxLines = 1`, and padded SIM pills; organized secondary actions (notes, spam reporting, rules) into a clean dropdown menu to prevent row cramping.
+- [x] **Favorite Panel Nickname Priority**: Resolved. When a nickname exists, the card displays exclusively the nickname without parentheses or full name clutter.
+- [x] **Ongoing Call Notification & Lockscreen Screen**: 
+  - *Implementation Architecture*: Uses Android Telecom `InCallService` bound foreground service with `NotificationCompat.Builder` using `setOngoing(true)` and Category `CATEGORY_CALL`.
+  - *Lockscreen Wakeup*: Activity manifest sets `showWhenLocked="true"`, `turnScreenOn="true"`, and notification includes a `FullScreenIntent` directing immediately to `InCallScreen` when ringing/active.
+  - *Background / Home Navigation*: Ongoing notification displays caller name, elapsed call timer, and pending intent action buttons for "Mute", "Speaker", and "End Call".
+- [x] **App-Only Contacts Visibility & Google Sync**: Resolved. Merged app-only contacts into `ContactsScreen`, added filter chips (`All`, `App Only`, `Google / Device`), "App Only" indicator chips, and one-tap "Sync to Google Contacts" button on rows and bottom sheets.
+- [x] **Contact Creation Modal Destination**: Resolved. Switched contact creation on the Contacts screen to `CreateContactDialog` allowing explicit choice between saving to Google/Device or App-Only, with optional favorite starring.
+- [x] **Bluetooth / Speaker / Handset Audio Routing**: Resolved. Added Telecom `setAudioRoute()` support (`ROUTE_EARPIECE`, `ROUTE_SPEAKER`, `ROUTE_BLUETOOTH`), dynamic audio button, and `AudioOutputSelectorDialog`.
+- [x] **3x3 Speed Dial Keypad Matrix**: Resolved. Aligned the speed dial selection dialog into an intuitive 3x3 layout matching the physical dialpad (with Key 1 reserved for Voicemail).
+
+
+## Completed in this update
+- [x] **Separated Full Name and Nickname**: Decoupled "Contact Name" and "Nickname" into distinct input fields in the edit dialog. The contact's full name is preserved, while custom nicknames are stored independently, synced to device contacts, displayed on favorite cards, and prioritized on dialpad speed-dial keys.
+- [x] **Label Wrapping & Chip Flow**: Converted the Edit Contact dialog label chips to dynamic `FlowRow` and enforced `softWrap = false` on chips and card badges, preventing awkward multi-line breaks like "Fam\nily".
+- [x] **Phone Number Display on Favorite Cards**: Added contact phone numbers beneath the contact name on all favorite cards.
+- [x] **Square Keypad Keys & Assignee Badges**: Upgraded dialpad buttons to modern rounded-square tiles displaying real-time speed dial assignee names without corner clipping.
+- [x] **Compact Horizontal Favorite Cards**: Redesigned cards to a balanced horizontal layout utilizing the card's width.
+- [x] **Concise Labels & `#number` Notation**: Simplified verbose labels ("Key #slot" is now `#slot`, "+ Speed Key" is "+ Speed").
+
 
 
 ## 1. Advanced Caller ID & Spam Protection (Truecaller Essentials)
-- [ ] **Live Community-Sourced Caller ID**: Identify unknown numbers in real time using a crowd-sourced / cloud database, even when numbers are not saved in local device contacts.
+- [x] **Live Community-Sourced Caller ID**: Identify unknown numbers in real time using a crowd-sourced / cloud database, even when numbers are not saved in local device contacts.
 - [x] **Spam & Telemarketer Tagging**: Visually flag known spam, fraud, or telemarketing numbers using color-coded alerts (e.g., high-visibility red badge for high-risk spam).
 - [x] **Auto-Block List & True Silence**: Automatically reject or silently drop top-reported spam callers, hidden/private numbers, or foreign prefixes before the phone rings or vibrates.
-- [ ] **Contextual Caller ID ("Call Reason")**: Allow callers or users to attach a short call reason / subject tag so recipients know the context before answering.
+- [x] **Contextual Caller ID ("Call Reason")**: Allow callers or users to attach a short call reason / subject tag so recipients know the context before answering.
 - [x] **Local Offline Spam Database**: Cache top regional/global spam numbers locally in Room SQLite for zero-latency, offline spam blocking.
 
 ---
@@ -19,8 +37,8 @@ showing the edit and delete on fav cards is making it look very cluttered lets g
 ## 2. Intelligent Automation & Call Management
 - [x] **Smart Call Automation & Auto-Responder**: Automated responder service that screens incoming calls, prompts callers for their identity/purpose, and posts actions.
 - [ ] **AI-Powered Call Screening**: On-device / cloud AI assistant to handle unknown callers, filtering bots and telemarketers with live conversational transcriptions.
-- [ ] **Quick-Decline SMS Chips**: Tap preset response chips (e.g., "In a meeting", "Can't talk right now") directly from the incoming call screen.
-- [ ] **Post-Call Reminders & Notes**: Add timestamped notes to recent calls and set follow-up callback reminders.
+- [x] **Quick-Decline SMS Chips**: Tap preset response chips (e.g., "In a meeting", "Can't talk right now") directly from the incoming call screen.
+- [x] **Post-Call Reminders & Notes**: Add timestamped notes to recent calls and set follow-up callback reminders.
 
 ---
 
@@ -34,7 +52,7 @@ showing the edit and delete on fav cards is making it look very cluttered lets g
 - [x] **Rich Call History**: Group consecutive calls from the same contact/number, show duration statistics, and display spam flags on past unknown numbers.
 - [x] **Speed Dial & VIP Favorites**: Assign long-press actions on digits 1–9 to immediately dial designated priority contacts.
 - [x] **Dual-SIM Optimization**: Seamless one-tap SIM switching (SIM 1 / SIM 2) with contact-specific preferred SIM routing rules.
-- [ ] **Native Android Home Screen Widgets**: Interactive Glance/AppWidget components for recent missed calls, quick-dial favorite avatars, and one-tap responder toggle.
+- [x] **Native Android Home Screen Widgets**: Interactive Glance/AppWidget components for recent missed calls, quick-dial favorite avatars, and one-tap responder toggle.
 
 ---
 

@@ -30,6 +30,11 @@ class TelecomCallService : InCallService() {
         Log.d(TAG, "onCallAdded: $call")
         CallManager.onCallAdded(call, applicationContext)
 
+        // Show ongoing call notification for background/switch-apps support
+        CallManager.activeCall.value?.let {
+            OngoingCallNotificationHelper.showCallNotification(applicationContext, it)
+        }
+
         // Bring In-Call UI forward
         try {
             val intent = Intent(this, MainActivity::class.java).apply {
@@ -46,11 +51,13 @@ class TelecomCallService : InCallService() {
         super.onCallRemoved(call)
         Log.d(TAG, "onCallRemoved: $call")
         CallManager.onCallRemoved(call, applicationContext)
+        OngoingCallNotificationHelper.cancelCallNotification(applicationContext)
     }
 
     override fun onCallAudioStateChanged(audioState: CallAudioState) {
         super.onCallAudioStateChanged(audioState)
         Log.d(TAG, "onCallAudioStateChanged: $audioState")
+        CallManager.onCallAudioStateChanged(audioState)
     }
 
     override fun onBringToForeground(showDialpad: Boolean) {

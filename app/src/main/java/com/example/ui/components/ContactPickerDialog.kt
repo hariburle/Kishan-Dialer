@@ -207,7 +207,8 @@ fun ContactPickerDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    onContactSelected(contact.name, contact.phoneNumber, contact.photoUri)
+                                    val selectedContactName = contact.nickname?.ifBlank { null } ?: contact.name
+                                    onContactSelected(selectedContactName, contact.phoneNumber, contact.photoUri)
                                     onDismiss()
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp),
@@ -259,6 +260,27 @@ fun ContactPickerDialog(
                                                 modifier = Modifier.size(14.dp)
                                             )
                                         }
+                                        if (contact.phoneNumbers.size > 1) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.secondaryContainer
+                                            ) {
+                                                Text(
+                                                    text = "${contact.phoneNumbers.size} numbers",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (!contact.nickname.isNullOrBlank()) {
+                                        Text(
+                                            text = contact.nickname,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium
+                                        )
                                     }
                                     Text(
                                         text = "${contact.phoneNumber} • ${contact.label}",
@@ -268,6 +290,44 @@ fun ContactPickerDialog(
                                 }
                             }
                         }
+
+                        // If contact has multiple numbers, show other numbers for easy selection
+                        if (contact.phoneNumbers.size > 1) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 52.dp, bottom = 6.dp)
+                            ) {
+                                contact.phoneNumbers.filter { it.number != contact.phoneNumber }.forEach { pn ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                val selectedContactName = contact.nickname?.ifBlank { null } ?: contact.name
+                                                onContactSelected(selectedContactName, pn.number, contact.photoUri)
+                                                onDismiss()
+                                            }
+                                            .padding(vertical = 4.dp, horizontal = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${pn.label}: ${pn.number}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Select",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 8.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)

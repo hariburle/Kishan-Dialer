@@ -85,6 +85,29 @@
             </intent-filter>
         </service>
 
+        <!-- Call Notification Receiver -->
+        <receiver
+            android:name=".telecom.CallNotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.telecom.ACTION_HANGUP" />
+                <action android:name="com.example.telecom.ACTION_TOGGLE_MUTE" />
+                <action android:name="com.example.telecom.ACTION_TOGGLE_SPEAKER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Home Screen App Widget -->
+        <receiver
+            android:name=".widget.SmartDialerWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_dialer_info" />
+        </receiver>
+
     </application>
 
 </manifest>

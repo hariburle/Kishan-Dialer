@@ -40,13 +40,18 @@ data class RecentCall(
     val durationSeconds: Long = 0,
     val ruleMatched: String? = null,
     val simSlot: Int = 1,
-    val isSpam: Boolean = false
+    val isSpam: Boolean = false,
+    val note: String? = null,
+    val reminderTime: Long? = null,
+    val callReason: String? = null,
+    val communityTag: String? = null
 )
 
 @Entity(tableName = "favorite_contacts")
 data class FavoriteContact(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    val nickname: String? = null,
     val phoneNumber: String,
     val label: String = "Mobile",
     val avatarColor: Long = 0xFF2563EB,

@@ -23,6 +23,12 @@ class AppRepository(private val appDao: AppDao) {
 
     suspend fun insertRecentCall(call: RecentCall): Long = appDao.insertRecentCall(call)
 
+    suspend fun getLatestRecentCallForNumber(phoneNumber: String): RecentCall? = appDao.getLatestRecentCallForNumber(phoneNumber)
+
+    suspend fun updateRecentCall(call: RecentCall) = appDao.updateRecentCall(call)
+
+    suspend fun getAllFavoritesList(): List<FavoriteContact> = appDao.getAllFavoritesList()
+
     suspend fun insertFavorite(contact: FavoriteContact): Long = appDao.insertFavorite(contact)
 
     suspend fun updateFavorite(contact: FavoriteContact) = appDao.updateFavorite(contact)

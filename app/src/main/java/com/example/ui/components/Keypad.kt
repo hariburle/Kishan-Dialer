@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -42,6 +44,7 @@ val standardDialpadKeys = listOf(
 fun Keypad(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    speedDialMap: Map<Char, String> = emptyMap(),
     onDigitPress: (Char) -> Unit,
     onDigitRelease: (Char) -> Unit = {},
     onDigitLongPress: ((Char) -> Unit)? = null
@@ -63,6 +66,7 @@ fun Keypad(
                     KeypadButton(
                         key = key,
                         compact = compact,
+                        speedDialLabel = speedDialMap[key.digit],
                         onPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             onDigitPress(key.digit)
@@ -88,6 +92,7 @@ fun Keypad(
 private fun KeypadButton(
     key: KeypadKey,
     compact: Boolean,
+    speedDialLabel: String? = null,
     onPress: () -> Unit,
     onRelease: () -> Unit,
     onLongPress: (() -> Unit)? = null
@@ -105,12 +110,13 @@ private fun KeypadButton(
 
     val buttonSize = if (compact) 56.dp else 72.dp
     val primaryTextSize = if (compact) 22.sp else 28.sp
+    val keyShape = RoundedCornerShape(if (compact) 10.dp else 14.dp)
 
     @OptIn(ExperimentalFoundationApi::class)
     Surface(
         modifier = Modifier
             .size(buttonSize)
-            .clip(CircleShape)
+            .clip(keyShape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = ripple(bounded = true),
@@ -118,13 +124,13 @@ private fun KeypadButton(
                 onLongClick = onLongPress
             )
             .testTag("keypad_digit_${key.digit}"),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = keyShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(4.dp)
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -134,9 +140,19 @@ private fun KeypadButton(
                     text = key.digit.toString(),
                     fontSize = primaryTextSize,
                     fontWeight = FontWeight.Medium,
-                    lineHeight = primaryTextSize
+                    lineHeight = primaryTextSize,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                if (key.subText.isNotEmpty()) {
+                if (!speedDialLabel.isNullOrBlank()) {
+                    Text(
+                        text = speedDialLabel,
+                        fontSize = if (compact) 9.sp else 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (key.subText.isNotEmpty()) {
                     Text(
                         text = key.subText,
                         fontSize = 9.sp,

@@ -46,6 +46,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,28 +77,31 @@ fun RulesScreen(
     onDeleteRule: (CallerRule) -> Unit,
     onClearLogs: () -> Unit,
     initiallyShowAddRuleWithNumber: String? = null,
+    onConsumeAddRuleNumber: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    var showDialog by remember { mutableStateOf(initiallyShowAddRuleWithNumber != null) }
-    var editingRule by remember {
-        mutableStateOf(
-            if (initiallyShowAddRuleWithNumber != null) {
-                CallerRule(
-                    name = "Custom Rule",
-                    phoneNumberPattern = initiallyShowAddRuleWithNumber,
-                    isEnabled = true,
-                    autoAnswer = true,
-                    answerDelaySec = 1,
-                    dtmfSequence = "9#",
-                    dtmfDelayMs = 800,
-                    sendSms = false,
-                    smsMessage = "",
-                    autoHangup = true,
-                    hangupDelaySec = 2
-                )
-            } else null
-        )
+    var showDialog by remember { mutableStateOf(false) }
+    var editingRule by remember { mutableStateOf<CallerRule?>(null) }
+
+    LaunchedEffect(initiallyShowAddRuleWithNumber) {
+        if (!initiallyShowAddRuleWithNumber.isNullOrBlank()) {
+            editingRule = CallerRule(
+                name = "Custom Rule",
+                phoneNumberPattern = initiallyShowAddRuleWithNumber,
+                isEnabled = true,
+                autoAnswer = true,
+                answerDelaySec = 1,
+                dtmfSequence = "9#",
+                dtmfDelayMs = 800,
+                sendSms = false,
+                smsMessage = "",
+                autoHangup = true,
+                hangupDelaySec = 2
+            )
+            showDialog = true
+            onConsumeAddRuleNumber()
+        }
     }
 
     Box(modifier = modifier.fillMaxSize().testTag("rules_screen")) {
@@ -257,11 +261,13 @@ fun RulesScreen(
             onDismiss = {
                 showDialog = false
                 editingRule = null
+                onConsumeAddRuleNumber()
             },
             onSave = { updatedRule ->
                 onSaveRule(updatedRule)
                 showDialog = false
                 editingRule = null
+                onConsumeAddRuleNumber()
             }
         )
     }

@@ -44,10 +44,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.FavoriteContact
+import com.example.telecom.SimInfo
 import com.example.ui.components.AddFavoriteDialog
 import com.example.ui.components.ContactPickerDialog
 import com.example.ui.components.FavoritesSection
 import com.example.ui.components.Keypad
+import com.example.ui.components.MultiNumberCallDialog
 import com.example.ui.components.RoleBanner
 
 import androidx.compose.foundation.background
@@ -55,6 +57,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.SimCard
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.AssistChipDefaults
 import com.example.util.ContactHelper
 import com.example.util.DeviceContact
 import com.example.util.T9Helper
@@ -67,13 +72,14 @@ fun DialerScreen(
     isDefaultDialer: Boolean,
     context: Context,
     simSlot: Int = 1,
+    activeSims: List<SimInfo> = emptyList(),
     onToggleSim: () -> Unit = {},
     onRoleChanged: () -> Unit,
     onDigitPress: (Char) -> Unit,
     onDeleteDigit: () -> Unit,
     onClearDigits: () -> Unit,
     onSelectContactNumber: (String) -> Unit,
-    onPlaceCall: (String) -> Unit,
+    onPlaceCall: (String, String?) -> Unit,
     onSimulateCall: (String, String) -> Unit,
     onCreateRuleForNumber: (String) -> Unit,
     onAddFavorite: (String, String, String, String?) -> Unit,
@@ -86,6 +92,10 @@ fun DialerScreen(
     var matchedContact by remember { mutableStateOf<DeviceContact?>(null) }
     var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
     var speedDialToast by remember { mutableStateOf<String?>(null) }
+    var selectedCallReason by remember { mutableStateOf<String?>(null) }
+    var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
+    var multiNumberSpeedDialSlot by remember { mutableStateOf<Int?>(null) }
+    var multiNumberFavoriteTarget by remember { mutableStateOf<FavoriteContact?>(null) }
 
     // Load device contacts once for T9 search
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -149,8 +159,20 @@ fun DialerScreen(
                     onSelectContactNumber(selectedNumber)
                 },
                 onCallContact = { selectedNumber ->
-                    onSelectContactNumber(selectedNumber)
-                    onPlaceCall(selectedNumber)
+                    val normNum = selectedNumber.replace(Regex("[^0-9+]"), "")
+                    val matchedDevContact = deviceContacts.firstOrNull { dc ->
+                        dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                        dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum
+                    }
+                    val matchedFav = favorites.firstOrNull { it.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum }
+                    if (matchedDevContact != null && matchedDevContact.phoneNumbers.size > 1) {
+                        multiNumberContactToCall = matchedDevContact
+                        multiNumberSpeedDialSlot = null
+                        multiNumberFavoriteTarget = matchedFav
+                    } else {
+                        onSelectContactNumber(selectedNumber)
+                        onPlaceCall(selectedNumber, null)
+                    }
                 },
                 onCreateRule = { selectedNumber ->
                     onCreateRuleForNumber(selectedNumber)
@@ -218,12 +240,40 @@ fun DialerScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else if (number.length >= 3) {
-                    AssistChip(
-                        onClick = { showAddFavoriteDialog = true },
-                        label = { Text("Add to Favorites", fontSize = 11.sp) },
-                        modifier = Modifier.height(32.dp)
-                    )
+                } else {
+                    val comm = remember(number) { com.example.util.CommunityCallerIdService.lookup(number) }
+                    if (comm != null) {
+                        val isSpam = comm.spamScore > 50
+                        Row(
+                            modifier = Modifier
+                                .background(
+                                    if (isSpam) Color(0xFFFEE2E2) else Color(0xFFE0F2FE),
+                                    RoundedCornerShape(20.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isSpam) Icons.Default.Warning else Icons.Default.Verified,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (isSpam) Color(0xFFDC2626) else Color(0xFF0284C7)
+                            )
+                            Text(
+                                text = "${comm.name} • ${comm.category}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSpam) Color(0xFF991B1B) else Color(0xFF0369A1)
+                            )
+                        }
+                    } else if (number.length >= 3) {
+                        AssistChip(
+                            onClick = { showAddFavoriteDialog = true },
+                            label = { Text("Add to Favorites", fontSize = 11.sp) },
+                            modifier = Modifier.height(32.dp)
+                        )
+                    }
                 }
             }
 
@@ -407,30 +457,56 @@ fun DialerScreen(
                 }
             }
 
+            val speedDialMap = remember(favorites) {
+                val map = mutableMapOf<Char, String>()
+                map['1'] = "VM"
+                (2..9).forEach { slot ->
+                    val fav = favorites.firstOrNull { it.speedDialSlot == slot }
+                    if (fav != null) {
+                        val shortName = fav.nickname?.takeIf { it.isNotBlank() }
+                            ?: fav.name.trim().split(" ").firstOrNull()
+                            ?: fav.name
+                        map[slot.digitToChar()] = shortName.take(8)
+                    }
+                }
+                map
+            }
+
             // Main Telephone Keypad with Speed Dial Long-Press
             Keypad(
                 compact = true,
+                speedDialMap = speedDialMap,
                 onDigitPress = onDigitPress,
                 onDigitLongPress = { digit ->
                     when (digit) {
                         '0' -> onDigitPress('+')
                         '1' -> {
-                            // Voicemail or VIP 1
-                            speedDialToast = "Speed Dial: Voicemail (*123)"
-                            onSelectContactNumber("*123")
-                            onPlaceCall("*123")
+                            val vmNumber = ContactHelper.getVoicemailNumber(context)
+                            speedDialToast = "Voicemail ($vmNumber)"
+                            onSelectContactNumber(vmNumber)
+                            onPlaceCall(vmNumber, null)
                         }
                         in '2'..'9' -> {
                             val slotNum = digit.digitToInt()
-                            // Look for favorite assigned to slot or fallback to indexed favorite
                             val fav = favorites.firstOrNull { it.speedDialSlot == slotNum }
-                                ?: favorites.getOrNull(slotNum - 2)
                             if (fav != null) {
-                                speedDialToast = "Speed Dial $slotNum: Calling ${fav.name}..."
-                                onSelectContactNumber(fav.phoneNumber)
-                                onPlaceCall(fav.phoneNumber)
+                                val normNum = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                val matchedDevContact = deviceContacts.firstOrNull { dc ->
+                                    dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                    dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
+                                    dc.name.equals(fav.name, ignoreCase = true)
+                                }
+                                if (matchedDevContact != null && matchedDevContact.phoneNumbers.size > 1) {
+                                    multiNumberContactToCall = matchedDevContact
+                                    multiNumberSpeedDialSlot = slotNum
+                                    multiNumberFavoriteTarget = fav
+                                } else {
+                                    speedDialToast = "#$slotNum: Calling ${fav.name}..."
+                                    onSelectContactNumber(fav.phoneNumber)
+                                    onPlaceCall(fav.phoneNumber, null)
+                                }
                             } else {
-                                speedDialToast = "Speed Dial $slotNum is empty. Assign in Favorites."
+                                speedDialToast = "#$slotNum is unassigned"
                             }
                         }
                     }
@@ -447,6 +523,62 @@ fun DialerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Contextual Caller ID ("Call Reason") Selector
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Call Reason Context:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (selectedCallReason != null) {
+                        Text(
+                            text = "Selected: $selectedCallReason",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                val reasons = listOf("Urgent", "Quick Question", "Work", "Personal", "Delivery")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AssistChip(
+                        onClick = { selectedCallReason = null },
+                        label = { Text("None", fontSize = 11.sp) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (selectedCallReason == null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+                        )
+                    )
+                    reasons.forEach { reason ->
+                        AssistChip(
+                            onClick = {
+                                selectedCallReason = if (selectedCallReason == reason) null else reason
+                            },
+                            label = { Text(reason, fontSize = 11.sp) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (selectedCallReason == reason) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
+                }
+            }
+
             // Dual-SIM Toggle Pill & WhatsApp Smart Suggestion
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -469,14 +601,20 @@ fun DialerScreen(
                             tint = if (simSlot == 1) Color(0xFF2563EB) else Color(0xFF16A34A),
                             modifier = Modifier.size(16.dp)
                         )
+                        val currentSim = activeSims.firstOrNull { it.slotIndex + 1 == simSlot }
+                        val simLabel = when {
+                            currentSim != null -> "SIM $simSlot (${currentSim.displayName})"
+                            simSlot == 1 -> "SIM 1 (Primary)"
+                            else -> "SIM 2 (Work / Roaming)"
+                        }
                         Text(
-                            text = if (simSlot == 1) "SIM 1 (Primary)" else "SIM 2 (Work / Roaming)",
+                            text = simLabel,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "• Switch",
+                            text = if (activeSims.size > 1) "• Switch" else "• Active",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -512,7 +650,7 @@ fun DialerScreen(
 
                 // Standard SIM GSM Call Button
                 FilledIconButton(
-                    onClick = { onPlaceCall(number) },
+                    onClick = { onPlaceCall(number, selectedCallReason) },
                     modifier = Modifier
                         .size(68.dp)
                         .testTag("dialer_call_button"),
@@ -554,6 +692,29 @@ fun DialerScreen(
             },
             onPickFromContacts = {
                 showContactPicker = true
+            }
+        )
+    }
+
+    // Multi-Number Confirmation Dialog for Speed Dial and Favorites
+    if (multiNumberContactToCall != null) {
+        val contact = multiNumberContactToCall!!
+        MultiNumberCallDialog(
+            contactName = contact.name,
+            phoneNumbers = contact.phoneNumbers,
+            defaultNumber = multiNumberFavoriteTarget?.phoneNumber ?: contact.phoneNumber,
+            titlePrefix = if (multiNumberSpeedDialSlot != null) "Speed Dial #$multiNumberSpeedDialSlot" else "Favorite",
+            onSelectNumberToCall = { chosenNumber ->
+                onSelectContactNumber(chosenNumber)
+                onPlaceCall(chosenNumber, null)
+            },
+            onSearchOtherContacts = {
+                showContactPicker = true
+            },
+            onDismiss = {
+                multiNumberContactToCall = null
+                multiNumberSpeedDialSlot = null
+                multiNumberFavoriteTarget = null
             }
         )
     }

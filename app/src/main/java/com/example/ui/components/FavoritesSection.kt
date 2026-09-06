@@ -220,8 +220,9 @@ private fun FavoriteItemCard(
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
+                            val initialChar = (contact.nickname?.takeIf { it.isNotBlank() } ?: contact.name).take(1).uppercase()
                             Text(
-                                text = contact.name.take(1).uppercase(),
+                                text = initialChar,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
@@ -241,8 +242,9 @@ private fun FavoriteItemCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                val displayName = if (!contact.nickname.isNullOrBlank()) contact.nickname else contact.name
                 Text(
-                    text = contact.name,
+                    text = displayName,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,

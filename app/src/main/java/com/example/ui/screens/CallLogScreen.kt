@@ -52,7 +52,28 @@ import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SimCard
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.example.data.FavoriteContact
 import com.example.data.SpamNumber
 
@@ -73,8 +94,81 @@ fun CallLogScreen(
     onMarkSpam: (String) -> Unit = {},
     onRemoveSpam: (String) -> Unit = {},
     onToggleFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit = { _, _, _, _ -> },
+    onUpdateNoteAndReminder: (RecentCall, String?, Long?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    var noteDialogCall by remember { mutableStateOf<RecentCall?>(null) }
+    var noteText by remember { mutableStateOf("") }
+    var reminderMinutes by remember { mutableStateOf<Long?>(null) }
+
+    if (noteDialogCall != null) {
+        val targetCall = noteDialogCall!!
+        AlertDialog(
+            onDismissRequest = { noteDialogCall = null },
+            title = {
+                Text(
+                    text = "Post-Call Note & Reminder",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = targetCall.callerName ?: targetCall.phoneNumber,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    OutlinedTextField(
+                        value = noteText,
+                        onValueChange = { noteText = it },
+                        placeholder = { Text("Add call summary, action items...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_call_note_input")
+                    )
+
+                    Text(
+                        text = "Follow-up Reminder:",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(null to "None", 15L to "15m", 60L to "1h", 1440L to "Tomorrow").forEach { (mins, label) ->
+                            AssistChip(
+                                onClick = { reminderMinutes = mins },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = if (reminderMinutes == mins) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val reminderEpoch = reminderMinutes?.let { System.currentTimeMillis() + it * 60 * 1000 }
+                        onUpdateNoteAndReminder(targetCall, noteText.ifBlank { null }, reminderEpoch)
+                        noteDialogCall = null
+                    },
+                    modifier = Modifier.testTag("dialog_save_note_btn")
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { noteDialogCall = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
     // Group consecutive calls from the same phone number
     val groupedCalls = androidx.compose.runtime.remember(recentCalls, spamNumbers) {
         val groups = mutableListOf<GroupedCallLog>()
@@ -144,6 +238,14 @@ fun CallLogScreen(
                     isFavorite = isFav,
                     onCallBack = { onCallBack(group.primaryCall.phoneNumber) },
                     onCreateRule = { onCreateRuleForNumber(group.primaryCall.phoneNumber) },
+                    onOpenNoteDialog = { target ->
+                        noteDialogCall = target
+                        noteText = target.note ?: ""
+                        reminderMinutes = target.reminderTime?.let {
+                            val diff = (it - System.currentTimeMillis()) / (60 * 1000)
+                            if (diff > 0) diff else null
+                        }
+                    },
                     onToggleSpam = {
                         if (group.isSpam) {
                             onRemoveSpam(group.primaryCall.phoneNumber)
@@ -171,6 +273,7 @@ private fun CallLogItem(
     isFavorite: Boolean,
     onCallBack: () -> Unit,
     onCreateRule: () -> Unit,
+    onOpenNoteDialog: (RecentCall) -> Unit,
     onToggleSpam: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
@@ -341,26 +444,32 @@ private fun CallLogItem(
                         Text(
                             text = formattedTime,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         if (call.durationSeconds > 0) {
                             Text(
                                 text = "• ${call.durationSeconds}s",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                         // SIM Slot Indicator Pill
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                         ) {
                             Text(
                                 text = "SIM ${call.simSlot}",
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -385,56 +494,128 @@ private fun CallLogItem(
                             )
                         }
                     }
+
+                    // Contextual Call Reason Badge
+                    if (!call.callReason.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "Reason: ${call.callReason}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    // Live Community Caller ID Badge
+                    val communityTag = call.communityTag ?: com.example.util.CommunityCallerIdService.lookup(call.phoneNumber)?.name
+                    if (!communityTag.isNullOrBlank() && !group.isSpam) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFE0F2FE)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Verified,
+                                    contentDescription = null,
+                                    tint = Color(0xFF0284C7),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = communityTag,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF0369A1),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    // Post-call Note badge
+                    if (!call.note.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EditNote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = call.note,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    // Post-call Reminder badge
+                    if (call.reminderTime != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFFEF3C7)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD97706),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "Reminder Set",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFB45309),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
+            var showOverflowMenu by remember { mutableStateOf(false) }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // One-tap Favorite Star (Android / iOS Recents style)
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                        contentDescription = if (isFavorite) "Remove Favorite" else "Add Favorite",
-                        tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Mark / Unmark Spam
-                IconButton(
-                    onClick = onToggleSpam,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = if (group.isSpam) Icons.Default.Security else Icons.Default.Block,
-                        contentDescription = if (group.isSpam) "Unblock Number" else "Report Spam",
-                        tint = if (group.isSpam) Color(0xFF16A34A) else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Create rule button
-                IconButton(
-                    onClick = onCreateRule,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Create Rule",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Call Back Button
+                // One-tap Call Back Button
                 FilledIconButton(
                     onClick = onCallBack,
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier.size(38.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -443,8 +624,76 @@ private fun CallLogItem(
                     Icon(
                         imageVector = Icons.Default.Call,
                         contentDescription = "Call Back",
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
+                }
+
+                // One-tap Favorite Star
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = if (isFavorite) "Remove Favorite" else "Add Favorite",
+                        tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // More Options Menu (Note, Spam, Rule)
+                Box {
+                    IconButton(
+                        onClick = { showOverflowMenu = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Actions",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(if (!call.note.isNullOrBlank() || call.reminderTime != null) "Edit Note / Reminder" else "Add Note / Reminder") },
+                            leadingIcon = {
+                                Icon(Icons.Default.EditNote, contentDescription = null)
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                onOpenNoteDialog(call)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (group.isSpam) "Unmark as Spam" else "Report as Spam") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (group.isSpam) Icons.Default.Security else Icons.Default.Block,
+                                    contentDescription = null,
+                                    tint = if (group.isSpam) Color(0xFF16A34A) else MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                onToggleSpam()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Create Automation Rule") },
+                            leadingIcon = {
+                                Icon(Icons.Default.SmartToy, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                onCreateRule()
+                            }
+                        )
+                    }
                 }
             }
         }

@@ -30,7 +30,9 @@ data class ActiveCallInfo(
     val isIncoming: Boolean,
     val connectTimeMillis: Long = 0L,
     val isSimulated: Boolean = false,
-    val photoUri: String? = null
+    val photoUri: String? = null,
+    val callReason: String? = null,
+    val communityInfo: com.example.util.CommunityCallerInfo? = null
 )
 
 data class AutomationStep(
@@ -61,11 +63,24 @@ object CallManager {
     private val _isSpeakerOn = MutableStateFlow(false)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 
+    private val _currentAudioRoute = MutableStateFlow(CallAudioState.ROUTE_EARPIECE)
+    val currentAudioRoute: StateFlow<Int> = _currentAudioRoute.asStateFlow()
+
+    private val _supportedAudioRoutes = MutableStateFlow(CallAudioState.ROUTE_EARPIECE or CallAudioState.ROUTE_SPEAKER)
+    val supportedAudioRoutes: StateFlow<Int> = _supportedAudioRoutes.asStateFlow()
+
+    private val _bluetoothDeviceName = MutableStateFlow<String?>(null)
+    val bluetoothDeviceName: StateFlow<String?> = _bluetoothDeviceName.asStateFlow()
+
     private val _automationState = MutableStateFlow<AutomationStep?>(null)
     val automationState: StateFlow<AutomationStep?> = _automationState.asStateFlow()
 
     private val _lastDtmfKey = MutableStateFlow<Char?>(null)
     val lastDtmfKey: StateFlow<Char?> = _lastDtmfKey.asStateFlow()
+
+    @Volatile
+    var lastInsertedCallId: Long? = null
+        private set
 
     private var simulatedTimerJob: Job? = null
 
@@ -76,10 +91,21 @@ object CallManager {
     fun onCallAdded(call: Call, context: Context) {
         this.nativeCall = call
         val number = extractPhoneNumber(call)
+        val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val name = lookedUp?.name ?: call.details?.callerDisplayName?.takeIf { it.isNotBlank() } ?: "Incoming Caller"
-        val photoUri = lookedUp?.photoUri
+        val communityInfo = if (lookedUp == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
         val isIncoming = call.state == Call.STATE_RINGING
+
+        val name = when {
+            isVoicemail -> "Voicemail"
+            lookedUp != null -> lookedUp.name
+            communityInfo != null -> communityInfo.name
+            !call.details?.callerDisplayName.isNullOrBlank() -> call.details!!.callerDisplayName
+            isIncoming -> "Incoming Caller"
+            number.isNotBlank() -> number
+            else -> "Outgoing Call"
+        }
+        val photoUri = lookedUp?.photoUri
 
         val callInfo = ActiveCallInfo(
             id = call.hashCode().toString(),
@@ -89,7 +115,8 @@ object CallManager {
             isIncoming = isIncoming,
             connectTimeMillis = if (call.state == Call.STATE_ACTIVE) System.currentTimeMillis() else 0L,
             isSimulated = false,
-            photoUri = photoUri
+            photoUri = photoUri,
+            communityInfo = communityInfo
         )
         _activeCall.value = callInfo
 
@@ -103,6 +130,7 @@ object CallManager {
                     } else current.connectTimeMillis
 
                     _activeCall.value = current.copy(state = state, connectTimeMillis = connectTime)
+                    OngoingCallNotificationHelper.showCallNotification(context, _activeCall.value!!)
                 }
 
                 if (state == Call.STATE_DISCONNECTED) {
@@ -110,6 +138,8 @@ object CallManager {
                 }
             }
         })
+
+        OngoingCallNotificationHelper.showCallNotification(context, callInfo)
 
         // Check if selective automation rule matches
         checkAndExecuteAutomation(context, number, isIncoming)
@@ -127,6 +157,7 @@ object CallManager {
         automationJob = null
         simulatedTimerJob?.cancel()
         simulatedTimerJob = null
+        OngoingCallNotificationHelper.cancelCallNotification(context)
 
         if (callInfo != null) {
             val duration = if (callInfo.connectTimeMillis > 0) {
@@ -140,7 +171,7 @@ object CallManager {
             scope.launch(Dispatchers.IO) {
                 try {
                     val dao = AppDatabase.getInstance(context).appDao()
-                    dao.insertRecentCall(
+                    val insertedId = dao.insertRecentCall(
                         RecentCall(
                             phoneNumber = callInfo.phoneNumber,
                             callerName = callInfo.displayName,
@@ -148,23 +179,37 @@ object CallManager {
                             callType = callType,
                             timestamp = System.currentTimeMillis(),
                             durationSeconds = duration,
-                            ruleMatched = _automationState.value?.ruleName
+                            ruleMatched = _automationState.value?.ruleName,
+                            callReason = callInfo.callReason,
+                            communityTag = callInfo.communityInfo?.category
                         )
                     )
+                    lastInsertedCallId = insertedId
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to log recent call", e)
                 }
             }
         }
 
-        // Post-call reset
-        scope.launch {
-            delay(1200)
-            _activeCall.value = null
-            _automationState.value = null
-            _isMuted.value = false
-            _isSpeakerOn.value = false
+        // Post-call state: keep in STATE_DISCONNECTED so InCallScreen note-taking panel can display.
+        // It will be dismissed by the user or by InCallScreen's auto-close timer if not interacted with.
+        val current = _activeCall.value
+        if (current != null) {
+            _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
         }
+        _isMuted.value = false
+        _isSpeakerOn.value = false
+    }
+
+    fun dismissActiveCall() {
+        _activeCall.value = null
+        _automationState.value = null
+        _isMuted.value = false
+        _isSpeakerOn.value = false
+        automationJob?.cancel()
+        automationJob = null
+        simulatedTimerJob?.cancel()
+        simulatedTimerJob = null
     }
 
     private fun extractPhoneNumber(call: Call): String {
@@ -348,11 +393,6 @@ object CallManager {
         val current = _activeCall.value ?: return
         if (current.isSimulated) {
             _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
-            scope.launch {
-                delay(800)
-                _activeCall.value = null
-                _automationState.value = null
-            }
         } else {
             try {
                 nativeCall?.reject(false, null)
@@ -362,15 +402,19 @@ object CallManager {
         }
     }
 
+    fun declineWithSms(context: Context, message: String) {
+        val current = _activeCall.value
+        val number = current?.phoneNumber ?: ""
+        if (number.isNotBlank() && message.isNotBlank()) {
+            sendSmsBackground(context, number, message)
+        }
+        declineCall()
+    }
+
     fun disconnectCall() {
         val current = _activeCall.value ?: return
         if (current.isSimulated) {
             _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
-            scope.launch {
-                delay(800)
-                _activeCall.value = null
-                _automationState.value = null
-            }
         } else {
             try {
                 nativeCall?.disconnect()
@@ -402,6 +446,24 @@ object CallManager {
         }
     }
 
+    fun onCallAudioStateChanged(audioState: CallAudioState) {
+        _isMuted.value = audioState.isMuted
+        _currentAudioRoute.value = audioState.route
+        _supportedAudioRoutes.value = audioState.supportedRouteMask
+        _isSpeakerOn.value = (audioState.route == CallAudioState.ROUTE_SPEAKER)
+
+        val btDevice = audioState.activeBluetoothDevice
+        _bluetoothDeviceName.value = btDevice?.let {
+            try { it.name } catch (e: SecurityException) { "Bluetooth Device" }
+        } ?: if ((audioState.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH) != 0) "Bluetooth Device" else null
+    }
+
+    fun setAudioRoute(route: Int) {
+        _currentAudioRoute.value = route
+        _isSpeakerOn.value = (route == CallAudioState.ROUTE_SPEAKER)
+        telecomService?.setAudioRoute(route)
+    }
+
     fun toggleMute() {
         val newMuted = !_isMuted.value
         _isMuted.value = newMuted
@@ -409,10 +471,16 @@ object CallManager {
     }
 
     fun toggleSpeaker() {
-        val newSpeaker = !_isSpeakerOn.value
-        _isSpeakerOn.value = newSpeaker
-        val route = if (newSpeaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE
-        telecomService?.setAudioRoute(route)
+        val newRoute = if (_isSpeakerOn.value) {
+            if ((_supportedAudioRoutes.value and CallAudioState.ROUTE_BLUETOOTH) != 0) {
+                CallAudioState.ROUTE_BLUETOOTH
+            } else {
+                CallAudioState.ROUTE_EARPIECE
+            }
+        } else {
+            CallAudioState.ROUTE_SPEAKER
+        }
+        setAudioRoute(newRoute)
     }
 
     private fun sendSmsBackground(context: Context, destination: String, text: String) {
@@ -433,10 +501,11 @@ object CallManager {
     /**
      * Simulator for testing in emulator environment where no GSM carrier is present.
      */
-    fun startSimulatedIncomingCall(context: Context, number: String, name: String) {
+    fun startSimulatedIncomingCall(context: Context, number: String, name: String, reason: String? = null) {
         automationJob?.cancel()
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val resolvedName = lookedUp?.name ?: name
+        val communityInfo = if (lookedUp == null) com.example.util.CommunityCallerIdService.lookup(number) else null
+        val resolvedName = lookedUp?.name ?: communityInfo?.name ?: name
         val photoUri = lookedUp?.photoUri
         val callInfo = ActiveCallInfo(
             id = "sim_${System.currentTimeMillis()}",
@@ -446,16 +515,26 @@ object CallManager {
             isIncoming = true,
             connectTimeMillis = 0L,
             isSimulated = true,
-            photoUri = photoUri
+            photoUri = photoUri,
+            callReason = reason ?: communityInfo?.defaultCallReason,
+            communityInfo = communityInfo
         )
         _activeCall.value = callInfo
         checkAndExecuteAutomation(context, number, true)
     }
 
-    fun startSimulatedOutgoingCall(context: Context, number: String) {
+    fun startSimulatedOutgoingCall(context: Context, number: String, reason: String? = null) {
         automationJob?.cancel()
+        val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val resolvedName = lookedUp?.name ?: number
+        val communityInfo = if (lookedUp == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
+        val resolvedName = when {
+            isVoicemail -> "Voicemail"
+            lookedUp != null -> lookedUp.name
+            communityInfo != null -> communityInfo.name
+            number.isNotBlank() -> number
+            else -> "Outgoing Call"
+        }
         val photoUri = lookedUp?.photoUri
         val callInfo = ActiveCallInfo(
             id = "sim_out_${System.currentTimeMillis()}",
@@ -465,7 +544,9 @@ object CallManager {
             isIncoming = false,
             connectTimeMillis = 0L,
             isSimulated = true,
-            photoUri = photoUri
+            photoUri = photoUri,
+            callReason = reason,
+            communityInfo = communityInfo
         )
         _activeCall.value = callInfo
 
@@ -475,7 +556,7 @@ object CallManager {
             if (current != null && current.state == Call.STATE_DIALING) {
                 _activeCall.value = current.copy(
                     state = Call.STATE_ACTIVE,
-                    displayName = "Connected",
+                    displayName = resolvedName,
                     connectTimeMillis = System.currentTimeMillis()
                 )
             }

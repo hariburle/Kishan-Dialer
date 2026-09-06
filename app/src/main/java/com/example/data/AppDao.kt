@@ -37,11 +37,20 @@ interface AppDao {
     @Query("SELECT * FROM recent_calls ORDER BY timestamp DESC LIMIT 100")
     fun getRecentCalls(): Flow<List<RecentCall>>
 
+    @Query("SELECT * FROM recent_calls WHERE phoneNumber = :phoneNumber ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestRecentCallForNumber(phoneNumber: String): RecentCall?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecentCall(call: RecentCall): Long
 
+    @Update
+    suspend fun updateRecentCall(call: RecentCall)
+
     @Query("SELECT * FROM favorite_contacts ORDER BY sortOrder ASC, id ASC")
     fun getAllFavorites(): Flow<List<FavoriteContact>>
+
+    @Query("SELECT * FROM favorite_contacts ORDER BY sortOrder ASC, id ASC")
+    suspend fun getAllFavoritesList(): List<FavoriteContact>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFavorite(contact: FavoriteContact): Long

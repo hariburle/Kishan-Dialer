@@ -43,10 +43,10 @@ class GreetingScreenshotTest {
           onDeleteDigit = {},
           onClearDigits = {},
           onSelectContactNumber = {},
-          onPlaceCall = {},
+          onPlaceCall = { _, _ -> },
           onSimulateCall = { _, _ -> },
           onCreateRuleForNumber = {},
-          onAddFavorite = { _, _, _ -> },
+          onAddFavorite = { _, _, _, _ -> },
           onDeleteFavorite = {}
         )
       }

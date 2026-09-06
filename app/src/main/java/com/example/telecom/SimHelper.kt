@@ -1,0 +1,105 @@
+package com.example.telecom
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
+import androidx.core.content.ContextCompat
+
+data class SimInfo(
+    val slotIndex: Int,          // 0-based: 0 for SIM 1, 1 for SIM 2
+    val subscriptionId: Int,
+    val displayName: String,     // e.g. "Spectrum Mobile", "Verizon", "T-Mobile", "Jio"
+    val carrierName: String,     // e.g. "Spectrum", "Verizon"
+    val number: String? = null,
+    val isDefault: Boolean = false
+)
+
+object SimHelper {
+
+    /**
+     * Reads active SIM cards and carrier/display names directly from Android's SubscriptionManager.
+     */
+    fun getActiveSimCards(context: Context): List<SimInfo> {
+        val simList = mutableListOf<SimInfo>()
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasPermission) {
+            return emptyList()
+        }
+
+        try {
+            val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+            val activeList: List<SubscriptionInfo>? = subscriptionManager?.activeSubscriptionInfoList
+
+            if (!activeList.isNullOrEmpty()) {
+                val defaultSubId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    SubscriptionManager.getDefaultVoiceSubscriptionId()
+                } else {
+                    -1
+                }
+
+                for (info in activeList) {
+                    val slot = info.simSlotIndex // 0 for SIM 1, 1 for SIM 2
+                    val display = info.displayName?.toString()?.trim()
+                    val carrier = info.carrierName?.toString()?.trim()
+                    val name = when {
+                        !display.isNullOrBlank() && !display.equals("CARD $slot", ignoreCase = true) -> display
+                        !carrier.isNullOrBlank() -> carrier
+                        else -> "SIM ${slot + 1}"
+                    }
+                    simList.add(
+                        SimInfo(
+                            slotIndex = slot,
+                            subscriptionId = info.subscriptionId,
+                            displayName = name,
+                            carrierName = carrier ?: name,
+                            number = info.number?.takeIf { it.isNotBlank() },
+                            isDefault = (info.subscriptionId == defaultSubId)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return simList.sortedBy { it.slotIndex }
+    }
+
+    /**
+     * Resolves the Telecom PhoneAccountHandle associated with a given SIM slot index.
+     */
+    fun getPhoneAccountForSimSlot(context: Context, slotIndex: Int): PhoneAccountHandle? {
+        return try {
+            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager ?: return null
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_PHONE_STATE
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!hasPermission) return null
+
+            val accounts = telecomManager.callCapablePhoneAccounts
+            // Try matching by subscription ID or slot index
+            val simCards = getActiveSimCards(context)
+            val targetSim = simCards.firstOrNull { it.slotIndex == slotIndex }
+
+            if (targetSim != null) {
+                accounts.firstOrNull { it.id.contains(targetSim.subscriptionId.toString()) }
+                    ?: accounts.getOrNull(slotIndex)
+                    ?: accounts.firstOrNull()
+            } else {
+                accounts.getOrNull(slotIndex) ?: accounts.firstOrNull()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}

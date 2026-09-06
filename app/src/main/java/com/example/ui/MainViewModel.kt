@@ -76,6 +76,26 @@ class MainViewModel(
     private val _showInCallKeypad = MutableStateFlow(false)
     val showInCallKeypad: StateFlow<Boolean> = _showInCallKeypad.asStateFlow()
 
+    // Call minimization state (so user can browse the app during active call)
+    private val _isCallScreenMinimized = MutableStateFlow(false)
+    val isCallScreenMinimized: StateFlow<Boolean> = _isCallScreenMinimized.asStateFlow()
+
+    fun minimizeCall() {
+        _isCallScreenMinimized.value = true
+    }
+
+    fun maximizeCall() {
+        _isCallScreenMinimized.value = false
+    }
+
+    // Flip to Shhh (DND status)
+    val isFlipToShhhEnabled: StateFlow<Boolean> = com.example.telecom.FlipToShhhManager.isFlipToShhhEnabled
+    val isShhhActive: StateFlow<Boolean> = com.example.telecom.FlipToShhhManager.isShhhActive
+
+    fun toggleFlipToShhh() {
+        com.example.telecom.FlipToShhhManager.setEnabled(appContext, !isFlipToShhhEnabled.value)
+    }
+
     // Dual-SIM State (Slot Index + 1, e.g., 1 or 2)
     private val _selectedSimSlot = MutableStateFlow(1)
     val selectedSimSlot: StateFlow<Int> = _selectedSimSlot.asStateFlow()

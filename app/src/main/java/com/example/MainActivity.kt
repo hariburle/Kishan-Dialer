@@ -15,12 +15,16 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Contacts
@@ -32,6 +36,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -49,12 +55,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.example.telecom.RoleHelper
 import com.example.ui.MainViewModel
 import com.example.ui.screens.CallLogScreen
@@ -74,6 +84,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        com.example.telecom.FlipToShhhManager.initialize(this)
 
         val tabExtra = intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
         handleDialIntent(intent)
@@ -123,7 +135,7 @@ fun MainAppContent(
     onOpenDialNumber: (String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var ruleNumberToCreate by remember { mutableStateOf<String?>(null) }
 
     // Collect States
@@ -147,6 +159,16 @@ fun MainAppContent(
     val selectedSimSlot by viewModel.selectedSimSlot.collectAsStateWithLifecycle()
     val activeSims by viewModel.activeSims.collectAsStateWithLifecycle()
     val pendingCloudConfirmation by viewModel.pendingCloudConfirmation.collectAsStateWithLifecycle()
+
+    val isFlipToShhhEnabled by viewModel.isFlipToShhhEnabled.collectAsStateWithLifecycle()
+    val isShhhActive by viewModel.isShhhActive.collectAsStateWithLifecycle()
+    val isCallScreenMinimized by viewModel.isCallScreenMinimized.collectAsStateWithLifecycle()
+
+    LaunchedEffect(activeCall) {
+        if (activeCall == null) {
+            viewModel.maximizeCall()
+        }
+    }
 
     var showDefaultAppPrompt by remember { mutableStateOf(true) }
 
@@ -190,17 +212,85 @@ fun MainAppContent(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Text(
-                            text = "Kishan Dialer",
-                            fontWeight = FontWeight.Bold
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    CenterAlignedTopAppBar(
+                        title = {
+                            Text(
+                                text = "Kishan Dialer",
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface
                         )
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
                     )
-                )
+
+                    // Minimized Ongoing Call Timer Banner (Simulating native dialer ongoing call state inside the app)
+                    AnimatedVisibility(
+                        visible = activeCall != null && isCallScreenMinimized && activeCall?.state != android.telecom.Call.STATE_DISCONNECTED,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        var elapsedSeconds by remember { mutableStateOf(0L) }
+                        LaunchedEffect(activeCall?.connectTimeMillis) {
+                            val connectTime = activeCall?.connectTimeMillis ?: 0L
+                            if (connectTime > 0L) {
+                                while (true) {
+                                    elapsedSeconds = (System.currentTimeMillis() - connectTime) / 1000
+                                    delay(1000)
+                                }
+                            } else {
+                                elapsedSeconds = 0L
+                            }
+                        }
+
+                        val minutes = elapsedSeconds / 60
+                        val seconds = elapsedSeconds % 60
+                        val timerText = String.format("%02d:%02d", minutes, seconds)
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.maximizeCall() }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .testTag("minimized_ongoing_call_banner"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF16A34A) // Standard Dialer green color
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Phone,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Ongoing call: ${activeCall?.displayName ?: "Unknown"}",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                Text(
+                                    text = timerText,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                }
             },
             bottomBar = {
                 NavigationBar(modifier = Modifier.testTag("bottom_nav_bar")) {
@@ -253,6 +343,7 @@ fun MainAppContent(
                 when (selectedTab) {
                     0 -> FavoritesScreen(
                         favorites = favorites,
+                        recentCalls = recentCalls,
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
@@ -280,7 +371,10 @@ fun MainAppContent(
                         },
                         onUpdateFavoriteNumber = { contact, newNum, newLabel ->
                             viewModel.updateFavoritePhoneNumber(contact, newNum, newLabel)
-                        }
+                        },
+                        isFlipToShhhEnabled = isFlipToShhhEnabled,
+                        isShhhActive = isShhhActive,
+                        onToggleFlipToShhh = { viewModel.toggleFlipToShhh() }
                     )
                     1 -> CallLogScreen(
                         recentCalls = recentCalls,
@@ -307,6 +401,7 @@ fun MainAppContent(
                     2 -> DialerScreen(
                         number = dialerNumber,
                         favorites = favorites,
+                        recentCalls = recentCalls,
                         isDefaultDialer = isDefaultDialer,
                         context = context,
                         simSlot = selectedSimSlot,
@@ -383,7 +478,7 @@ fun MainAppContent(
 
         // Active In-Call Overlay Screen (Appears seamlessly over UI whenever call is active/ringing)
         AnimatedVisibility(
-            visible = activeCall != null,
+            visible = activeCall != null && !isCallScreenMinimized,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -412,7 +507,8 @@ fun MainAppContent(
                         val reminderTime = reminderMinutes?.let { System.currentTimeMillis() + it * 60 * 1000 }
                         viewModel.savePostCallNote(call.phoneNumber, note, reminderTime)
                     },
-                    onDismiss = { viewModel.dismissCall() }
+                    onMarkSpam = { num -> viewModel.markAsSpam(num) },
+                    onDismiss = { viewModel.minimizeCall() }
                 )
             }
         }

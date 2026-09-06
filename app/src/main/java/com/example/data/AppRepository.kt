@@ -23,6 +23,12 @@ class AppRepository(private val appDao: AppDao) {
 
     suspend fun insertRecentCall(call: RecentCall): Long = appDao.insertRecentCall(call)
 
+    fun getCallHistoryForContact(numbers: List<String>, name: String): Flow<List<RecentCall>> =
+        appDao.getCallHistoryForContact(numbers, name)
+
+    suspend fun getCallHistoryForContactList(numbers: List<String>, name: String): List<RecentCall> =
+        appDao.getCallHistoryForContactList(numbers, name)
+
     suspend fun getLatestRecentCallForNumber(phoneNumber: String): RecentCall? = appDao.getLatestRecentCallForNumber(phoneNumber)
 
     suspend fun updateRecentCall(call: RecentCall) = appDao.updateRecentCall(call)

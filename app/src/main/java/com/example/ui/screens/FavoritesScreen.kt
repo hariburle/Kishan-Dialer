@@ -23,15 +23,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -41,6 +45,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -50,7 +57,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +69,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.FavoriteContact
+import com.example.data.RecentCall
 import com.example.ui.components.AddFavoriteDialog
 import com.example.ui.components.ContactDetailsBottomSheet
 import com.example.ui.components.ContactPickerDialog
@@ -84,9 +95,19 @@ import com.example.util.ContactHelper
 import com.example.util.ContactPhoneNumber
 import com.example.util.DeviceContact
 
+data class PopularContactItem(
+    val name: String,
+    val phoneNumber: String,
+    val label: String,
+    val photoUri: String?,
+    val callCount: Int,
+    val deviceContact: DeviceContact?
+)
+
 @Composable
 fun FavoritesScreen(
     favorites: List<FavoriteContact>,
+    recentCalls: List<RecentCall> = emptyList(),
     onSelectNumber: (String) -> Unit,
     onCallNumber: (String) -> Unit,
     onCreateRule: (String) -> Unit,
@@ -96,6 +117,9 @@ fun FavoritesScreen(
     onMoveFavorite: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onEditFavorite: (FavoriteContact, String?) -> Unit = { _, _ -> },
     onUpdateFavoriteNumber: (FavoriteContact, String, String) -> Unit = { _, _, _ -> },
+    isFlipToShhhEnabled: Boolean = true,
+    isShhhActive: Boolean = false,
+    onToggleFlipToShhh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -110,11 +134,104 @@ fun FavoritesScreen(
     var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactToCall by remember { mutableStateOf<FavoriteContact?>(null) }
     var contactDetailsTarget by remember { mutableStateOf<Pair<DeviceContact, FavoriteContact?>?>(null) }
+    var ignoredPopularNumbers by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             deviceContacts = ContactHelper.fetchDeviceContacts(context)
         }
+    }
+
+    val popularContacts = remember(deviceContacts, favorites, recentCalls, ignoredPopularNumbers) {
+        val favNumbers = favorites.map { it.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) }.filter { it.isNotBlank() }.toSet()
+        val favNames = favorites.map { it.name.trim().lowercase() }.toSet()
+
+        val excludedNames = setOf("voicemail", "spam", "gate", "intercom", "unknown")
+
+        val callCounts = mutableMapOf<String, Int>()
+        recentCalls.forEach { call ->
+            val norm = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            if (norm.isNotBlank()) {
+                callCounts[norm] = (callCounts[norm] ?: 0) + 1
+            }
+        }
+
+        val list = mutableListOf<PopularContactItem>()
+        val seenNorms = mutableSetOf<String>()
+
+        fun isIgnored(norm: String, name: String): Boolean {
+            val nameLower = name.trim().lowercase()
+            return ignoredPopularNumbers.contains(norm) || ignoredPopularNumbers.any { nameLower.contains(it) }
+        }
+
+        // 1. Device contacts that have call counts
+        deviceContacts.forEach { dc ->
+            val norm = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val nameLower = dc.name.trim().lowercase()
+            val isExcluded = excludedNames.any { nameLower.contains(it) }
+            if (norm.isNotBlank() && !favNumbers.contains(norm) && !favNames.contains(nameLower) && !isExcluded && !isIgnored(norm, dc.name)) {
+                val count = callCounts[norm] ?: 0
+                if (count > 0 && seenNorms.add(norm)) {
+                    list.add(
+                        PopularContactItem(
+                            name = dc.name,
+                            phoneNumber = dc.phoneNumber,
+                            label = dc.label,
+                            photoUri = dc.photoUri,
+                            callCount = count,
+                            deviceContact = dc
+                        )
+                    )
+                }
+            }
+        }
+
+        // 2. Recent calls not in favorites or already added
+        recentCalls.forEach { rc ->
+            val norm = rc.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val callerNameStr = rc.callerName ?: ""
+            val nameLower = callerNameStr.trim().lowercase()
+            val isExcluded = excludedNames.any { nameLower.contains(it) }
+            if (norm.isNotBlank() && !favNumbers.contains(norm) && !favNames.contains(nameLower) && !isExcluded && !isIgnored(norm, callerNameStr) && seenNorms.add(norm)) {
+                val count = callCounts[norm] ?: 1
+                list.add(
+                    PopularContactItem(
+                        name = callerNameStr.ifBlank { rc.phoneNumber },
+                        phoneNumber = rc.phoneNumber,
+                        label = "Frequent",
+                        photoUri = rc.photoUri,
+                        callCount = count,
+                        deviceContact = null
+                    )
+                )
+            }
+        }
+
+        // 3. If list is small and device contacts exist, populate from contacts
+        if (list.size < 4 && deviceContacts.isNotEmpty()) {
+            deviceContacts.filter { dc ->
+                val norm = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                val nameLower = dc.name.trim().lowercase()
+                val isExcluded = excludedNames.any { nameLower.contains(it) }
+                norm.isNotBlank() && !favNumbers.contains(norm) && !favNames.contains(nameLower) && !isExcluded && !isIgnored(norm, dc.name)
+            }.take(8).forEach { dc ->
+                val norm = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                if (seenNorms.add(norm)) {
+                    list.add(
+                        PopularContactItem(
+                            name = dc.name,
+                            phoneNumber = dc.phoneNumber,
+                            label = dc.label,
+                            photoUri = dc.photoUri,
+                            callCount = 1,
+                            deviceContact = dc
+                        )
+                    )
+                }
+            }
+        }
+
+        list.sortedByDescending { it.callCount }.take(4)
     }
 
     Column(
@@ -137,11 +254,16 @@ fun FavoritesScreen(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = if (isConfigureMode) "Reorder & manage" else "Quick dial",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (isConfigureMode) "Reorder & manage" else "Quick dial",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Row(
@@ -287,7 +409,8 @@ fun FavoritesScreen(
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f)
                                     ) {
                                         Surface(
                                             shape = CircleShape,
@@ -328,13 +451,25 @@ fun FavoritesScreen(
                                             )
                                         }
                                     }
+
+                                    if (!isFav) {
+                                        TextButton(
+                                            onClick = {
+                                                onAddFavorite(contact.name, contact.phoneNumber, contact.label, contact.photoUri)
+                                            }
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Star, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Add")
+                                        }
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 Spacer(modifier = Modifier.height(6.dp))
 
-                                // List each phone number with direct call button
+                                // List each phone number with WhatsApp and Phone call buttons
                                 val numbersToShow = if (contact.phoneNumbers.isNotEmpty()) {
                                     contact.phoneNumbers
                                 } else {
@@ -346,14 +481,11 @@ fun FavoritesScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                onCallNumber(pn.number)
-                                            }
                                             .padding(vertical = 6.dp, horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = pn.label,
                                                 style = MaterialTheme.typography.labelSmall,
@@ -366,15 +498,35 @@ fun FavoritesScreen(
                                                 fontWeight = FontWeight.SemiBold
                                             )
                                         }
-                                        FilledIconButton(
-                                            onClick = { onCallNumber(pn.number) },
-                                            modifier = Modifier.size(36.dp)
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Call,
-                                                contentDescription = "Call ${pn.number}",
-                                                modifier = Modifier.size(18.dp)
-                                            )
+                                            FilledIconButton(
+                                                onClick = { ContactHelper.launchWhatsAppCall(context, pn.number) },
+                                                modifier = Modifier.size(34.dp),
+                                                colors = IconButtonDefaults.filledIconButtonColors(
+                                                    containerColor = Color(0xFF25D366),
+                                                    contentColor = Color.White
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Chat,
+                                                    contentDescription = "WhatsApp ${pn.number}",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            FilledIconButton(
+                                                onClick = { onCallNumber(pn.number) },
+                                                modifier = Modifier.size(34.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Call,
+                                                    contentDescription = "Call ${pn.number}",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -383,7 +535,7 @@ fun FavoritesScreen(
                     }
                 }
             }
-        } else if (favorites.isEmpty()) {
+        } else if (favorites.isEmpty() && popularContacts.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -456,39 +608,231 @@ fun FavoritesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize().testTag("favorites_grid")
                 ) {
-                    itemsIndexed(favorites, key = { _, it -> it.id }) { index, contact ->
-                        FavoriteGridCard(
-                            contact = contact,
-                            isCompact = isCompact,
-                            isConfigureMode = isConfigureMode,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < favorites.size - 1,
-                            onMoveUp = { onMoveFavorite(index, index - 1) },
-                            onMoveDown = { onMoveFavorite(index, index + 1) },
-                            onCall = {
-                                onCallNumber(contact.phoneNumber)
-                            },
-                            onLongClick = {
-                                val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
-                                val matched = deviceContacts.firstOrNull { dc ->
-                                    dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
-                                    dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
-                                    dc.name.equals(contact.name, ignoreCase = true)
-                                } ?: DeviceContact(
-                                    name = contact.name,
-                                    phoneNumber = contact.phoneNumber,
-                                    label = contact.label,
-                                    photoUri = contact.photoUri,
-                                    phoneNumbers = listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
-                                )
-                                contactDetailsTarget = Pair(matched, contact)
-                            },
-                            onSelect = { onSelectNumber(contact.phoneNumber) },
-                            onCreateRule = { onCreateRule(contact.phoneNumber) },
-                            onEdit = { editTargetContact = contact },
-                            onDelete = { onDeleteFavorite(contact) },
-                            onSpeedDialClick = { speedDialTargetContact = contact }
-                        )
+                    if (favorites.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "No Favorites Starred Yet",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Star frequent callers below or tap + to add VIPs",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    TextButton(onClick = { showContactPicker = true }) {
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Add")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if (popularContacts.isNotEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "FAVORITES",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                    ) {
+                                        Text(
+                                            text = "${favorites.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        itemsIndexed(favorites, key = { _, it -> it.id }) { index, contact ->
+                            FavoriteGridCard(
+                                contact = contact,
+                                isCompact = isCompact,
+                                isConfigureMode = isConfigureMode,
+                                canMoveUp = index > 0,
+                                canMoveDown = index < favorites.size - 1,
+                                onMoveUp = { onMoveFavorite(index, index - 1) },
+                                onMoveDown = { onMoveFavorite(index, index + 1) },
+                                onCall = {
+                                    onCallNumber(contact.phoneNumber)
+                                },
+                                onLongClick = {
+                                    val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                    val matched = deviceContacts.firstOrNull { dc ->
+                                        dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                        dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
+                                        dc.name.equals(contact.name, ignoreCase = true)
+                                    } ?: DeviceContact(
+                                        name = contact.name,
+                                        phoneNumber = contact.phoneNumber,
+                                        label = contact.label,
+                                        photoUri = contact.photoUri,
+                                        phoneNumbers = listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
+                                    )
+                                    contactDetailsTarget = Pair(matched, contact)
+                                },
+                                onSelect = { onSelectNumber(contact.phoneNumber) },
+                                onCreateRule = { onCreateRule(contact.phoneNumber) },
+                                onEdit = { editTargetContact = contact },
+                                onDelete = { onDeleteFavorite(contact) },
+                                onSpeedDialClick = { speedDialTargetContact = contact }
+                            )
+                        }
+                    }
+
+                    // ---------------------------------------------------------
+                    // POPULAR (FREQUENTLY CONTACTED) SECTION
+                    // ---------------------------------------------------------
+                    if (popularContacts.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = if (favorites.isEmpty()) 6.dp else 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.TrendingUp,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEA580C),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Popular",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "• Frequently Contacted",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
+                                ) {
+                                    Text(
+                                        text = "${popularContacts.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        items(popularContacts, key = { "pop_${it.phoneNumber}_${it.name}" }) { popItem ->
+                            PopularGridCard(
+                                item = popItem,
+                                isConfigureMode = isConfigureMode,
+                                onCall = { onCallNumber(popItem.phoneNumber) },
+                                onAddFavorite = {
+                                    onAddFavorite(popItem.name, popItem.phoneNumber, popItem.label, popItem.photoUri)
+                                },
+                                onIgnore = {
+                                    val norm = popItem.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
+                                    ignoredPopularNumbers = ignoredPopularNumbers + norm
+                                },
+                                onClick = {
+                                    val dc = popItem.deviceContact ?: DeviceContact(
+                                        name = popItem.name,
+                                        phoneNumber = popItem.phoneNumber,
+                                        label = popItem.label,
+                                        photoUri = popItem.photoUri,
+                                        phoneNumbers = listOf(ContactPhoneNumber(popItem.phoneNumber, popItem.label))
+                                    )
+                                    contactDetailsTarget = Pair(dc, null)
+                                }
+                            )
+                        }
+
+                        if (isConfigureMode && ignoredPopularNumbers.isNotEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Ignored Popular Contacts (${ignoredPopularNumbers.size})",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        for (num in ignoredPopularNumbers) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier.clickable {
+                                                    ignoredPopularNumbers = ignoredPopularNumbers - num
+                                                }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(text = num, style = MaterialTheme.typography.labelSmall)
+                                                    Icon(imageVector = Icons.Default.Check, contentDescription = "Restore", modifier = Modifier.size(14.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -842,11 +1186,11 @@ private fun FavoriteGridCard(
                             contentColor = Color.White
                         )
                     ) {
-                        Text(
-                            text = "WA",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "WhatsApp",
+                            tint = Color.White,
+                            modifier = Modifier.size(15.dp)
                         )
                     }
 
@@ -865,6 +1209,168 @@ private fun FavoriteGridCard(
                             modifier = Modifier.size(14.dp)
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PopularGridCard(
+    item: PopularContactItem,
+    isConfigureMode: Boolean = false,
+    onCall: () -> Unit,
+    onAddFavorite: () -> Unit,
+    onIgnore: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .testTag("popular_card_${item.phoneNumber}"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Avatar
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    if (!item.photoUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = item.photoUri,
+                            contentDescription = item.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = item.name.take(1).uppercase(),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+
+                // Call count chip & Ignore or Add Favorite button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
+                    ) {
+                        Text(
+                            text = "${item.callCount} calls",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    if (isConfigureMode) {
+                        IconButton(
+                            onClick = onIgnore,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Ignore Contact",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = onAddFavorite,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "Add to Favorites",
+                                tint = Color(0xFFF59E0B),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${item.phoneNumber} • ${item.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Button(
+                    onClick = onCall,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = "Call",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "Call", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = onAddFavorite,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(text = "Star", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

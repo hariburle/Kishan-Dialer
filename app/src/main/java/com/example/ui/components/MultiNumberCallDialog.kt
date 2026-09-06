@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -227,11 +228,11 @@ fun MultiNumberCallDialog(
                                         contentColor = Color.White
                                     )
                                 ) {
-                                    Text(
-                                        text = "WA",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        color = Color.White
+                                    Icon(
+                                        imageVector = Icons.Default.Chat,
+                                        contentDescription = "WhatsApp",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
 

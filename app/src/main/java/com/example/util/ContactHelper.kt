@@ -615,6 +615,69 @@ object ContactHelper {
         }
         return contactsMap.values.map { it.toDeviceContact() }
     }
+
+    /**
+     * Fetches call history from CallLog.Calls for a specific list of phone numbers or contact name.
+     */
+    fun fetchDeviceCallHistoryForContact(context: Context, numbers: List<String>, name: String? = null): List<com.example.data.RecentCall> {
+        val result = mutableListOf<com.example.data.RecentCall>()
+        try {
+            val normalizedNumbers = numbers.map { it.filter { c -> c.isDigit() }.takeLast(10) }.filter { it.isNotBlank() }.toSet()
+            if (normalizedNumbers.isEmpty() && name.isNullOrBlank()) return emptyList()
+
+            val projection = arrayOf(
+                android.provider.CallLog.Calls.NUMBER,
+                android.provider.CallLog.Calls.CACHED_NAME,
+                android.provider.CallLog.Calls.TYPE,
+                android.provider.CallLog.Calls.DATE,
+                android.provider.CallLog.Calls.DURATION
+            )
+            val cursor = context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${android.provider.CallLog.Calls.DATE} DESC"
+            )
+            cursor?.use {
+                val numIdx = it.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
+                val nameIdx = it.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
+                val typeIdx = it.getColumnIndex(android.provider.CallLog.Calls.TYPE)
+                val dateIdx = it.getColumnIndex(android.provider.CallLog.Calls.DATE)
+                val durIdx = it.getColumnIndex(android.provider.CallLog.Calls.DURATION)
+
+                var matchedCount = 0
+                while (it.moveToNext() && matchedCount < 50) {
+                    val rawNumber = if (numIdx != -1) it.getString(numIdx) ?: "" else ""
+                    val cachedName = if (nameIdx != -1) it.getString(nameIdx) ?: "" else ""
+                    val norm = rawNumber.filter { c -> c.isDigit() }.takeLast(10)
+
+                    val matchesNumber = norm.isNotBlank() && normalizedNumbers.contains(norm)
+                    val matchesName = !name.isNullOrBlank() && cachedName.equals(name, ignoreCase = true)
+
+                    if (matchesNumber || matchesName) {
+                        val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
+                        val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
+                        val duration = if (durIdx != -1) it.getLong(durIdx) else 0L
+
+                        result.add(
+                            com.example.data.RecentCall(
+                                phoneNumber = rawNumber,
+                                callerName = if (cachedName.isNotBlank()) cachedName else (name ?: rawNumber),
+                                callType = type,
+                                timestamp = date,
+                                durationSeconds = duration
+                            )
+                        )
+                        matchedCount++
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Permission not granted or query failed
+        }
+        return result
+    }
 }
 
 private class DeviceContactAccumulator(

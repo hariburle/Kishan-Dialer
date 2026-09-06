@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,12 +59,17 @@ fun Keypad(
     ) {
         standardDialpadKeys.forEach { row ->
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = if (compact) 16.dp else 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 row.forEach { key ->
                     KeypadButton(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(if (compact) 1.6f else 1.2f),
                         key = key,
                         compact = compact,
                         speedDialLabel = speedDialMap[key.digit],
@@ -90,6 +96,7 @@ fun Keypad(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun KeypadButton(
+    modifier: Modifier = Modifier,
     key: KeypadKey,
     compact: Boolean,
     speedDialLabel: String? = null,
@@ -108,14 +115,12 @@ private fun KeypadButton(
         }
     }
 
-    val buttonSize = if (compact) 56.dp else 72.dp
-    val primaryTextSize = if (compact) 22.sp else 28.sp
-    val keyShape = RoundedCornerShape(if (compact) 10.dp else 14.dp)
+    val primaryTextSize = if (compact) 26.sp else 36.sp
+    val keyShape = RoundedCornerShape(if (compact) 12.dp else 20.dp)
 
     @OptIn(ExperimentalFoundationApi::class)
     Surface(
-        modifier = Modifier
-            .size(buttonSize)
+        modifier = modifier
             .clip(keyShape)
             .combinedClickable(
                 interactionSource = interactionSource,

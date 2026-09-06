@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dialpad
@@ -72,6 +73,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -139,6 +141,7 @@ fun ContactsScreen(
     var sortBy by remember { mutableStateOf(ContactSortBy.FIRST_NAME) }
     var sortOrder by remember { mutableStateOf(ContactSortOrder.ASCENDING) }
     var sourceFilter by remember { mutableStateOf(ContactSourceFilter.ALL) }
+    var showFavoritesSection by rememberSaveable { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -552,7 +555,7 @@ fun ContactsScreen(
                     .fillMaxSize()
                     .testTag("contacts_list")
             ) {
-                // Pinned Favorites on Top of Contacts Panel
+                // Collapsible Pinned Favorites on Top of Contacts Panel (Closed by Default)
                 if (favorites.isNotEmpty() && searchQuery.isBlank()) {
                     item(key = "top_favorites_section") {
                         Column(
@@ -563,7 +566,8 @@ fun ContactsScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                    .clickable { showFavoritesSection = !showFavoritesSection }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -578,54 +582,81 @@ fun ContactsScreen(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Text(
-                                        text = "FAVORITES (${favorites.size})",
+                                        text = "Favorites (${favorites.size})",
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
+                                    Icon(
+                                        imageVector = if (showFavoritesSection) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (showFavoritesSection) "Collapse" else "Expand",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                                 Text(
-                                    text = "Tap to call • Long-press numbers",
+                                    text = if (showFavoritesSection) "Tap to call • Long-press numbers" else "Tap to expand",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxWidth()
+                            AnimatedVisibility(
+                                visible = showFavoritesSection,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
                             ) {
-                                items(favorites, key = { "top_fav_${it.id}" }) { fav ->
-                                    FavoriteTopChip(
-                                        favorite = fav,
-                                        onTap = {
-                                            onCallNumber(fav.phoneNumber)
-                                        },
-                                        onLongPress = {
-                                            val normNum = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
-                                            val matched = deviceContacts.firstOrNull { dc ->
-                                                dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
-                                                dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
-                                                dc.name.equals(fav.name, ignoreCase = true) ||
-                                                (!dc.nickname.isNullOrBlank() && dc.nickname.equals(fav.name, ignoreCase = true))
-                                            } ?: DeviceContact(
-                                                name = fav.name,
-                                                phoneNumber = fav.phoneNumber,
-                                                label = fav.label,
-                                                photoUri = fav.photoUri,
-                                                phoneNumbers = listOf(ContactPhoneNumber(fav.phoneNumber, fav.label))
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(favorites, key = { "top_fav_${it.id}" }) { fav ->
+                                            FavoriteTopChip(
+                                                favorite = fav,
+                                                onTap = {
+                                                    val normNum = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                                    val matched = deviceContacts.firstOrNull { dc ->
+                                                        dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                                        dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
+                                                        dc.name.equals(fav.name, ignoreCase = true) ||
+                                                        (!dc.nickname.isNullOrBlank() && dc.nickname.equals(fav.name, ignoreCase = true))
+                                                    } ?: DeviceContact(
+                                                        name = fav.name,
+                                                        phoneNumber = fav.phoneNumber,
+                                                        label = fav.label,
+                                                        photoUri = fav.photoUri,
+                                                        phoneNumbers = listOf(ContactPhoneNumber(fav.phoneNumber, fav.label))
+                                                    )
+                                                    contactForDetailsSheet = matched
+                                                },
+                                                onLongPress = {
+                                                    val normNum = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                                    val matched = deviceContacts.firstOrNull { dc ->
+                                                        dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                                        dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
+                                                        dc.name.equals(fav.name, ignoreCase = true) ||
+                                                        (!dc.nickname.isNullOrBlank() && dc.nickname.equals(fav.name, ignoreCase = true))
+                                                    } ?: DeviceContact(
+                                                        name = fav.name,
+                                                        phoneNumber = fav.phoneNumber,
+                                                        label = fav.label,
+                                                        photoUri = fav.photoUri,
+                                                        phoneNumbers = listOf(ContactPhoneNumber(fav.phoneNumber, fav.label))
+                                                    )
+                                                    contactForDetailsSheet = matched
+                                                }
                                             )
-                                            contactForDetailsSheet = matched
                                         }
+                                    }
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                     )
                                 }
                             }
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
                         }
                     }
                 }
@@ -1089,23 +1120,21 @@ private fun ContactRowItem(
                                         )
                                     }
 
-                                    // WhatsApp Call / Message (if international e.g. +91)
-                                    if (ContactHelper.shouldSuggestWhatsApp(pn.number)) {
-                                        FilledIconButton(
-                                            onClick = { ContactHelper.launchWhatsAppCall(rowContext, pn.number) },
-                                            modifier = Modifier.size(30.dp),
-                                            colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = Color(0xFF25D366),
-                                                contentColor = Color.White
-                                            )
-                                        ) {
-                                            Text(
-                                                text = "WA",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White
-                                            )
-                                        }
+                                    // WhatsApp Call / Message
+                                    FilledIconButton(
+                                        onClick = { ContactHelper.launchWhatsAppCall(rowContext, pn.number) },
+                                        modifier = Modifier.size(30.dp),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = Color(0xFF25D366),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = "WhatsApp",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
                                     }
 
                                     // Copy number

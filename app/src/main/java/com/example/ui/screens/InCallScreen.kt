@@ -7,6 +7,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,12 +28,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Message
@@ -38,11 +46,16 @@ import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Voicemail
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -84,6 +97,25 @@ import com.example.ui.components.Keypad
 import com.example.util.ContactHelper
 import kotlinx.coroutines.delay
 
+enum class ScreeningSender {
+    AI_ASSISTANT,
+    CALLER
+}
+
+data class ScreeningMessage(
+    val sender: ScreeningSender,
+    val text: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class ScreeningAnalysis(
+    val verdict: String,
+    val isSpam: Boolean,
+    val confidence: Int,
+    val category: String,
+    val suggestedAction: String
+)
+
 @Composable
 fun InCallScreen(
     callInfo: ActiveCallInfo,
@@ -106,10 +138,12 @@ fun InCallScreen(
     onStopDtmf: (Char) -> Unit,
     onDeclineWithSms: (String) -> Unit = {},
     onSavePostCallNote: ((note: String?, reminderMinutes: Long?) -> Unit)? = null,
+    onMarkSpam: ((String) -> Unit)? = null,
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var callSeconds by remember { mutableLongStateOf(0L) }
     var enteredDtmfHistory by remember { mutableStateOf("") }
     var postCallNote by remember { mutableStateOf("") }
@@ -118,6 +152,105 @@ fun InCallScreen(
     var isUserInteractingWithNote by remember { mutableStateOf(false) }
     var autoCloseRemainingSeconds by remember { mutableIntStateOf(6) }
     var showAudioRouteSelector by remember { mutableStateOf(false) }
+
+    // AI Call Screening State
+    var isScreeningMode by remember { mutableStateOf(false) }
+    var screeningMessages by remember { mutableStateOf<List<ScreeningMessage>>(emptyList()) }
+    var screeningAnalysis by remember { mutableStateOf<ScreeningAnalysis?>(null) }
+    var isCallerTranscribing by remember { mutableStateOf(false) }
+    var isAiSpeaking by remember { mutableStateOf(false) }
+
+    // Automated screening conversation when screening mode is engaged
+    LaunchedEffect(isScreeningMode) {
+        if (isScreeningMode && screeningMessages.isEmpty()) {
+            isAiSpeaking = true
+            delay(400)
+            screeningMessages = listOf(
+                ScreeningMessage(
+                    sender = ScreeningSender.AI_ASSISTANT,
+                    text = "Hi, I'm screening calls for Kishan. May I ask who is calling and what this is regarding?"
+                )
+            )
+            delay(1200)
+            isAiSpeaking = false
+            isCallerTranscribing = true
+            delay(1800)
+
+            val isSpamNumber = (callInfo.communityInfo?.spamScore ?: 0) > 40 ||
+                callInfo.displayName.contains("Spam", ignoreCase = true) ||
+                callInfo.displayName.contains("Telemarket", ignoreCase = true) ||
+                callInfo.displayName.contains("Credit", ignoreCase = true) ||
+                callInfo.displayName.contains("Unknown", ignoreCase = true) ||
+                callInfo.phoneNumber.contains("800")
+
+            if (isSpamNumber) {
+                screeningMessages = screeningMessages + ScreeningMessage(
+                    sender = ScreeningSender.CALLER,
+                    text = "Hello! This is Kevin from Cardholder Services. You have been pre-selected for an instant zero-fee loan offer valid today only."
+                )
+                screeningAnalysis = ScreeningAnalysis(
+                    verdict = "Suspected Telemarketer / Robocall",
+                    isSpam = true,
+                    confidence = 97,
+                    category = "Unsolicited Financial Offer",
+                    suggestedAction = "Block & Report Spam"
+                )
+            } else {
+                val callerName = if (callInfo.displayName.isNotBlank() && callInfo.displayName != "Incoming Caller" && callInfo.displayName != "Calling...") {
+                    callInfo.displayName
+                } else "Express Courier"
+                screeningMessages = screeningMessages + ScreeningMessage(
+                    sender = ScreeningSender.CALLER,
+                    text = "Hello Kishan, this is $callerName calling regarding the scheduled package delivery at your address."
+                )
+                screeningAnalysis = ScreeningAnalysis(
+                    verdict = "Verified Legitimate Caller",
+                    isSpam = false,
+                    confidence = 94,
+                    category = "Delivery & Service",
+                    suggestedAction = "Safe to Connect"
+                )
+            }
+            isCallerTranscribing = false
+        }
+    }
+
+    val onScreeningAskMore = {
+        coroutineScope.launch {
+            isAiSpeaking = true
+            screeningMessages = screeningMessages + ScreeningMessage(
+                sender = ScreeningSender.AI_ASSISTANT,
+                text = "Could you please clarify your business name and reference order number?"
+            )
+            delay(1200)
+            isAiSpeaking = false
+            isCallerTranscribing = true
+            delay(1600)
+            val isSpam = screeningAnalysis?.isSpam == true
+            screeningMessages = screeningMessages + ScreeningMessage(
+                sender = ScreeningSender.CALLER,
+                text = if (isSpam)
+                    "We are an independent underwriting partner. Press 1 to connect with our senior loan advisor."
+                else
+                    "Certainly, this is Swift Logistics reference ID #94812 with the registered delivery."
+            )
+            isCallerTranscribing = false
+        }
+    }
+
+    val onScreeningTellBusy = {
+        coroutineScope.launch {
+            isAiSpeaking = true
+            screeningMessages = screeningMessages + ScreeningMessage(
+                sender = ScreeningSender.AI_ASSISTANT,
+                text = "Understood. Kishan is in a meeting right now and will follow up with you later. Thank you, goodbye."
+            )
+            delay(1200)
+            isAiSpeaking = false
+            delay(800)
+            onDisconnect()
+        }
+    }
 
     LaunchedEffect(callInfo.state, isUserInteractingWithNote, noteSaved) {
         if (callInfo.state == Call.STATE_DISCONNECTED && !isUserInteractingWithNote && !noteSaved) {
@@ -451,13 +584,219 @@ fun InCallScreen(
                 }
             }
 
+            // Middle Section: AI Call Screening Panel (When Screening is Active)
+            AnimatedVisibility(
+                visible = isScreeningMode,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                        .testTag("ai_screening_card"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartToy,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "AI Call Screening",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = if (isAiSpeaking) "AI Speaking..." else if (isCallerTranscribing) "Caller Speaking..." else "Live Transcript",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        // Chat Messages / Transcripts
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            screeningMessages.forEach { msg ->
+                                val isAi = msg.sender == ScreeningSender.AI_ASSISTANT
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = if (isAi) Arrangement.Start else Arrangement.End
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(
+                                            topStart = 14.dp,
+                                            topEnd = 14.dp,
+                                            bottomStart = if (isAi) 2.dp else 14.dp,
+                                            bottomEnd = if (isAi) 14.dp else 2.dp
+                                        ),
+                                        color = if (isAi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                                        modifier = Modifier.widthIn(max = 260.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Text(
+                                                text = if (isAi) "🤖 AI Assistant" else "👤 Caller",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isAi) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = msg.text,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (isAi) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isCallerTranscribing) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                                    Text(
+                                        text = "Transcribing caller speech...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        // Real-time AI Analysis Verdict
+                        screeningAnalysis?.let { analysis ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (analysis.isSpam) Color(0xFFFEE2E2) else Color(0xFFDCFCE7),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (analysis.isSpam) Icons.Default.Warning else Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = if (analysis.isSpam) Color(0xFFDC2626) else Color(0xFF16A34A),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "${analysis.verdict} (${analysis.confidence}%)",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (analysis.isSpam) Color(0xFF991B1B) else Color(0xFF166534)
+                                        )
+                                        Text(
+                                            text = "${analysis.category} • ${analysis.suggestedAction}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (analysis.isSpam) Color(0xFFB91C1C) else Color(0xFF15803D)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Interactive Quick Prompts for User to instruct AI
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            AssistChip(
+                                onClick = { onScreeningAskMore() },
+                                label = { Text("Ask More Details", fontSize = 11.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            )
+                            AssistChip(
+                                onClick = { onScreeningTellBusy() },
+                                label = { Text("Tell them I'll call back", fontSize = 11.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Message, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            )
+                        }
+
+                        // Screening Decisions
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = {
+                                    onMarkSpam?.invoke(callInfo.phoneNumber)
+                                    onDisconnect()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) {
+                                Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Block & End", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = { isScreeningMode = false },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Take Call", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Bottom Section: Audio controls & Call End/Answer buttons
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                // Secondary Controls Row: Mute, Keypad, Speaker
+                // Secondary Controls Row: Mute, Keypad, Speaker, AI Screen
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -479,6 +818,15 @@ fun InCallScreen(
                         isActive = showKeypad,
                         onClick = onToggleKeypad,
                         testTag = "incall_keypad_button"
+                    )
+
+                    // AI Screen Toggle
+                    InCallControlButton(
+                        icon = Icons.Default.SmartToy,
+                        label = if (isScreeningMode) "Screening" else "AI Screen",
+                        isActive = isScreeningMode,
+                        onClick = { isScreeningMode = !isScreeningMode },
+                        testTag = "incall_screening_toggle_button"
                     )
 
                     // Audio Route (Speaker / Handset / Bluetooth)
@@ -552,45 +900,94 @@ fun InCallScreen(
                         }
                     }
 
-                    // Incoming call: Answer (Green) & Decline (Red)
+                    // Incoming call: Answer (Green), AI Screen (Blue), & Decline (Red)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Decline Button
-                        FilledIconButton(
-                            onClick = onDecline,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .testTag("incall_decline_button"),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color(0xFFDC2626),
-                                contentColor = Color.White
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            FilledIconButton(
+                                onClick = onDecline,
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .testTag("incall_decline_button"),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color(0xFFDC2626),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CallEnd,
+                                    contentDescription = "Decline Call",
+                                    modifier = Modifier.size(34.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Decline",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CallEnd,
-                                contentDescription = "Decline Call",
-                                modifier = Modifier.size(36.dp)
+                        }
+
+                        // AI Screen Button
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            FilledIconButton(
+                                onClick = {
+                                    isScreeningMode = true
+                                    onAnswer()
+                                },
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .testTag("incall_ai_screen_button"),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartToy,
+                                    contentDescription = "AI Screen Call",
+                                    modifier = Modifier.size(34.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "AI Screen",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
 
                         // Answer Button
-                        FilledIconButton(
-                            onClick = onAnswer,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .testTag("incall_answer_button"),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color(0xFF16A34A),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Call,
-                                contentDescription = "Answer Call",
-                                modifier = Modifier.size(36.dp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            FilledIconButton(
+                                onClick = onAnswer,
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .testTag("incall_answer_button"),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color(0xFF16A34A),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "Answer Call",
+                                    modifier = Modifier.size(34.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Answer",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

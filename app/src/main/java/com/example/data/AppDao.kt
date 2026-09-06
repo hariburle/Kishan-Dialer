@@ -37,6 +37,12 @@ interface AppDao {
     @Query("SELECT * FROM recent_calls ORDER BY timestamp DESC LIMIT 100")
     fun getRecentCalls(): Flow<List<RecentCall>>
 
+    @Query("SELECT * FROM recent_calls WHERE phoneNumber IN (:numbers) OR callerName = :name ORDER BY timestamp DESC LIMIT 100")
+    fun getCallHistoryForContact(numbers: List<String>, name: String): Flow<List<RecentCall>>
+
+    @Query("SELECT * FROM recent_calls WHERE phoneNumber IN (:numbers) OR callerName = :name ORDER BY timestamp DESC LIMIT 100")
+    suspend fun getCallHistoryForContactList(numbers: List<String>, name: String): List<RecentCall>
+
     @Query("SELECT * FROM recent_calls WHERE phoneNumber = :phoneNumber ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestRecentCallForNumber(phoneNumber: String): RecentCall?
 

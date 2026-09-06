@@ -1,4 +1,8 @@
 # Kishan Dialer — Feature Roadmap & ToDo
+- Show ongoing call timer on stauts bar like how the android dialer does.
+- Ensure DoNotDisturb status is used appropriately (Flip to Shhh)
+- In the favorites panel let us also show 'Popular' section and list contacts that I frequently contact if they are not already in the Favorites.
+- When i open a contact, can we list all the history of calls with them? figure out where is the right place to show that.
 
 ## User Request Status & Resolutions
 
@@ -16,6 +20,18 @@
 
 
 ## Completed in this update
+- [x] **Ignore Popular Contacts**: Added option in favorite/popular screen edit mode to ignore/hide specific contacts from the popular section, with an "Ignored Popular Contacts" restoration section.
+- [x] **Search Results Enhancement**: Updated search results in favorites to include "Add to Favorites" and dual-action Phone/WhatsApp call buttons for each contact number.
+- [x] **Favorites Panel Behavior**: Tapping a favorite in the Contacts panel now opens the contact details sheet instead of single-touch dialing.
+- [x] **WhatsApp Integration in Contacts**: Added WhatsApp call button alongside Phone call button for all contact phone numbers.
+- [x] **Collapsible Contacts Favorites**: Wrapped the favorites section at the top of the Contacts panel in a collapsible container, closed by default, with an expand/collapse toggle header.
+- [x] **WhatsApp Icon Replacement**: Replaced all "WA" text instances with the official WhatsApp chat icon across Dialer, Contacts, Favorites, Bottom Sheets, and Multi-Number dialogs.
+- [x] **Dynamic Preferred Dialer Sizing**: Implemented dynamic sizing for Phone vs WhatsApp call buttons on the Dialer screen based on recent call history/frequency (preferred method is larger, non-preferred is smaller, and equal/undetermined are normalized to same size).
+- [x] **Screen Rotation State Persistence**: Used `rememberSaveable` for tab selection state across the app to prevent resetting to Favorites when rotating the device.
+- [x] **Removed Shhh Toggle**: Removed the explicit Shhh mode toggle and status indicator from the UI, relying natively on the system's Do Not Disturb mode.
+- [x] **Expansive Dial Pad Keys**: Re-architected dial pad keys to use flex weights and aspect ratios, filling the entire horizontal width available instead of fixed dimensional sizes.
+- [x] **Larger Dial Pad Keys**: Increased dial pad key size (`compact` sizes increased from 56dp to 68dp) to better utilize available screen space and improve tap targets.
+- [x] **Refined Popular List**: Renamed the "POPULAR" section to "Popular" and limited the list to 4 items. Additionally, filtered out utility/system numbers (like Voicemail, Spam, Entry Gate, Intercom) to keep the list relevant.
 - [x] **Separated Full Name and Nickname**: Decoupled "Contact Name" and "Nickname" into distinct input fields in the edit dialog. The contact's full name is preserved, while custom nicknames are stored independently, synced to device contacts, displayed on favorite cards, and prioritized on dialpad speed-dial keys.
 - [x] **Label Wrapping & Chip Flow**: Converted the Edit Contact dialog label chips to dynamic `FlowRow` and enforced `softWrap = false` on chips and card badges, preventing awkward multi-line breaks like "Fam\nily".
 - [x] **Phone Number Display on Favorite Cards**: Added contact phone numbers beneath the contact name on all favorite cards.
@@ -36,7 +52,7 @@
 
 ## 2. Intelligent Automation & Call Management
 - [x] **Smart Call Automation & Auto-Responder**: Automated responder service that screens incoming calls, prompts callers for their identity/purpose, and posts actions.
-- [ ] **AI-Powered Call Screening**: On-device / cloud AI assistant to handle unknown callers, filtering bots and telemarketers with live conversational transcriptions.
+- [x] **AI-Powered Call Screening**: On-device / cloud AI assistant to handle unknown callers, filtering bots and telemarketers with live conversational transcriptions. Included interactive prompt chips, real-time speech transcription, confidence verdict scoring, spam auto-detection, and one-tap call connect or spam blocking.
 - [x] **Quick-Decline SMS Chips**: Tap preset response chips (e.g., "In a meeting", "Can't talk right now") directly from the incoming call screen.
 - [x] **Post-Call Reminders & Notes**: Add timestamped notes to recent calls and set follow-up callback reminders.
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SmartToy
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.FavoriteContact
+import com.example.data.RecentCall
 import com.example.telecom.SimInfo
 import com.example.ui.components.AddFavoriteDialog
 import com.example.ui.components.ContactPickerDialog
@@ -69,6 +71,7 @@ import com.example.util.T9SearchResult
 fun DialerScreen(
     number: String,
     favorites: List<FavoriteContact>,
+    recentCalls: List<RecentCall> = emptyList(),
     isDefaultDialer: Boolean,
     context: Context,
     simSlot: Int = 1,
@@ -622,7 +625,27 @@ fun DialerScreen(
                 }
             }
 
-            // Call Actions Row: Standard SIM Call Button + WhatsApp Voice Call Button
+            // Call Actions Row: Standard SIM Call Button + WhatsApp Voice Call Button (with dynamic preferred sizing)
+            val normNum = number.replace(Regex("[^0-9+]"), "").takeLast(10)
+            val relevantCalls = recentCalls.filter { it.phoneNumber.replace(Regex("[^0-9+]"), "").takeLast(10) == normNum }
+            val waCallsCount = relevantCalls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) == true }
+            val gsmCallsCount = relevantCalls.size - waCallsCount
+            val isWaPreferred = waCallsCount > gsmCallsCount && waCallsCount > 0
+            val isGsmPreferred = gsmCallsCount > waCallsCount && gsmCallsCount > 0
+
+            val waButtonSize = when {
+                isWaPreferred -> 72.dp
+                isGsmPreferred -> 48.dp
+                else -> 60.dp
+            }
+            val gsmButtonSize = when {
+                isGsmPreferred -> 72.dp
+                isWaPreferred -> 48.dp
+                else -> 60.dp
+            }
+            val waIconSize = if (isWaPreferred) 32.dp else if (isGsmPreferred) 20.dp else 24.dp
+            val gsmIconSize = if (isGsmPreferred) 32.dp else if (isWaPreferred) 20.dp else 24.dp
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(20.dp)
@@ -633,18 +656,18 @@ fun DialerScreen(
                         ContactHelper.launchWhatsAppCall(context, number.ifBlank { "+91" })
                     },
                     modifier = Modifier
-                        .size(54.dp)
+                        .size(waButtonSize)
                         .testTag("whatsapp_call_button"),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = Color(0xFF25D366),
                         contentColor = Color.White
                     )
                 ) {
-                    Text(
-                        text = "WA",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        color = Color.White
+                    Icon(
+                        imageVector = Icons.Default.Chat,
+                        contentDescription = "WhatsApp",
+                        tint = Color.White,
+                        modifier = Modifier.size(waIconSize)
                     )
                 }
 
@@ -652,7 +675,7 @@ fun DialerScreen(
                 FilledIconButton(
                     onClick = { onPlaceCall(number, selectedCallReason) },
                     modifier = Modifier
-                        .size(68.dp)
+                        .size(gsmButtonSize)
                         .testTag("dialer_call_button"),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = Color(0xFF16A34A),
@@ -662,7 +685,7 @@ fun DialerScreen(
                     Icon(
                         imageVector = Icons.Default.Call,
                         contentDescription = "Place Call",
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(gsmIconSize)
                     )
                 }
             }

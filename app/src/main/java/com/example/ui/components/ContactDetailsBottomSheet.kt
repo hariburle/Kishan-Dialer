@@ -24,14 +24,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallMissed
+import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -39,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,10 +81,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.AppDatabase
 import com.example.data.FavoriteContact
+import com.example.data.RecentCall
 import com.example.util.ContactHelper
 import com.example.util.ContactPhoneNumber
 import com.example.util.DeviceContact
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Android Phone Dialer-style Contact Card Bottom Sheet.
@@ -107,6 +124,28 @@ fun ContactDetailsBottomSheet(
     }
     var numberForActionMenu by remember { mutableStateOf<ContactPhoneNumber?>(null) }
 
+    var contactCallHistory by remember { mutableStateOf<List<RecentCall>>(emptyList()) }
+    var isLoadingHistory by remember { mutableStateOf(true) }
+
+    LaunchedEffect(contact) {
+        isLoadingHistory = true
+        withContext(Dispatchers.IO) {
+            val phoneNumbers = contact.phoneNumbers.map { it.number } + listOfNotNull(contact.phoneNumber.ifBlank { null })
+            val db = AppDatabase.getInstance(context)
+            val localHistory = db.appDao().getCallHistoryForContactList(phoneNumbers, contact.name)
+            val deviceHistory = ContactHelper.fetchDeviceCallHistoryForContact(context, phoneNumbers, contact.name)
+
+            // Merge local and device call logs, eliminating close duplicates
+            val merged = (localHistory + deviceHistory)
+                .distinctBy { "${it.phoneNumber}_${it.timestamp / 10000}_${it.callType}" }
+                .sortedByDescending { it.timestamp }
+                .take(40)
+
+            contactCallHistory = merged
+            isLoadingHistory = false
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -125,6 +164,7 @@ fun ContactDetailsBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -253,7 +293,7 @@ fun ContactDetailsBottomSheet(
 
                 // WhatsApp Voice Call Button
                 ActionRoundButton(
-                    iconText = "WA",
+                    icon = Icons.Default.Chat,
                     label = "WhatsApp",
                     containerColor = Color(0xFF25D366),
                     contentColor = Color.White,
@@ -485,6 +525,236 @@ fun ContactDetailsBottomSheet(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                                 modifier = Modifier.padding(horizontal = 12.dp)
                             )
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // CALL HISTORY SECTION (Native Android Dialer Style)
+            // -------------------------------------------------------------
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "CALL HISTORY",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (contactCallHistory.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = "${contactCallHistory.size} calls",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isLoadingHistory) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else if (contactCallHistory.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "No call history found",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Calls with ${contact.name} will be logged here",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                } else {
+                    val dateFormat = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        contactCallHistory.forEachIndexed { idx, call ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onDismiss()
+                                        onCallNumber(call.phoneNumber)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    // Call Type Icon
+                                    val (icon, tint, typeLabel) = when (call.callType) {
+                                        1 -> Triple(
+                                            Icons.AutoMirrored.Filled.CallReceived,
+                                            Color(0xFF16A34A),
+                                            "Incoming"
+                                        )
+                                        2 -> Triple(
+                                            Icons.AutoMirrored.Filled.CallMade,
+                                            Color(0xFF2563EB),
+                                            "Outgoing"
+                                        )
+                                        3 -> Triple(
+                                            Icons.AutoMirrored.Filled.CallMissed,
+                                            Color(0xFFDC2626),
+                                            "Missed"
+                                        )
+                                        else -> Triple(
+                                            Icons.Default.Call,
+                                            Color(0xFF4B5563),
+                                            "Call"
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = tint.copy(alpha = 0.12f),
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = typeLabel,
+                                                tint = tint,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Column {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = typeLabel,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (call.callType == 3) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (call.durationSeconds > 0) {
+                                                val mins = call.durationSeconds / 60
+                                                val secs = call.durationSeconds % 60
+                                                val durText = if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
+                                                Text(
+                                                    text = "• $durText",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "${dateFormat.format(Date(call.timestamp))} • ${call.phoneNumber}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        if (!call.note.isNullOrBlank()) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Notes,
+                                                    contentDescription = "Note",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = call.note,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        onDismiss()
+                                        onCallNumber(call.phoneNumber)
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Call,
+                                        contentDescription = "Call",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            if (idx < contactCallHistory.lastIndex) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                            }
                         }
                     }
                 }

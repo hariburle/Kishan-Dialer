@@ -141,6 +141,20 @@ object CallManager {
 
         OngoingCallNotificationHelper.showCallNotification(context, callInfo)
 
+        // Check Do Not Disturb (DND) status
+        try {
+            val isFavoriteCaller = lookedUp?.isStarred == true
+            if (FlipToShhhManager.isDndActive(context)) {
+                val allowed = FlipToShhhManager.isCallerAllowedUnderCurrentDnd(context, isFavoriteCaller)
+                if (!allowed) {
+                    Log.d(TAG, "Incoming call from $number silenced by Do Not Disturb")
+                    FlipToShhhManager.silenceIncomingCallIfRinging(context)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking DND policy for caller", e)
+        }
+
         // Check if selective automation rule matches
         checkAndExecuteAutomation(context, number, isIncoming)
     }
@@ -376,10 +390,14 @@ object CallManager {
     fun answerCall() {
         val current = _activeCall.value ?: return
         if (current.isSimulated) {
-            _activeCall.value = current.copy(
+            val updated = current.copy(
                 state = Call.STATE_ACTIVE,
                 connectTimeMillis = System.currentTimeMillis()
             )
+            _activeCall.value = updated
+            telecomService?.let {
+                OngoingCallNotificationHelper.showCallNotification(it, updated)
+            }
         } else {
             try {
                 nativeCall?.answer(VideoProfile.STATE_AUDIO_ONLY)
@@ -549,16 +567,19 @@ object CallManager {
             communityInfo = communityInfo
         )
         _activeCall.value = callInfo
+        OngoingCallNotificationHelper.showCallNotification(context, callInfo)
 
         scope.launch {
             delay(1500)
             val current = _activeCall.value
             if (current != null && current.state == Call.STATE_DIALING) {
-                _activeCall.value = current.copy(
+                val updated = current.copy(
                     state = Call.STATE_ACTIVE,
                     displayName = resolvedName,
                     connectTimeMillis = System.currentTimeMillis()
                 )
+                _activeCall.value = updated
+                OngoingCallNotificationHelper.showCallNotification(context, updated)
             }
         }
     }

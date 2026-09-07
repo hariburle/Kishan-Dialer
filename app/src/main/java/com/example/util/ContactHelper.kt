@@ -168,6 +168,31 @@ object ContactHelper {
         }
     }
 
+    fun launchWhatsAppMessage(context: Context, rawNumber: String) {
+        val cleanNumber = rawNumber.replace(Regex("[^0-9+]"), "")
+        val digitsOnly = cleanNumber.trimStart('+')
+        if (digitsOnly.isEmpty()) {
+            android.widget.Toast.makeText(context, "Invalid phone number for WhatsApp", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$digitsOnly")).apply {
+                setPackage("com.whatsapp")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digitsOnly")).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(webIntent)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "WhatsApp is not installed on this device", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     /**
      * Checks if a phone number matches international WhatsApp routing rules (e.g. +91 prefix)
      */
@@ -539,6 +564,64 @@ object ContactHelper {
             } catch (e: Exception) {
                 e.printStackTrace()
                 false
+            }
+        }
+        return false
+    }
+
+    fun updateContactDetails(
+        context: Context,
+        oldPhoneNumber: String,
+        newName: String,
+        newPhoneNumber: String,
+        newLabel: String,
+        newNickname: String?
+    ): Boolean {
+        var contactId: Long? = null
+        try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(oldPhoneNumber)
+            )
+            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
+                    if (idIdx != -1) contactId = cursor.getLong(idIdx)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (contactId != null) {
+            try {
+                val values = android.content.ContentValues().apply {
+                    put(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, newName)
+                }
+                context.contentResolver.update(
+                    ContactsContract.Data.CONTENT_URI,
+                    values,
+                    "${ContactsContract.Data.CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+                    arrayOf(contactId.toString(), ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                )
+
+                val phoneValues = android.content.ContentValues().apply {
+                    put(ContactsContract.CommonDataKinds.Phone.NUMBER, newPhoneNumber)
+                    put(ContactsContract.CommonDataKinds.Phone.LABEL, newLabel)
+                }
+                context.contentResolver.update(
+                    ContactsContract.Data.CONTENT_URI,
+                    phoneValues,
+                    "${ContactsContract.Data.CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+                    arrayOf(contactId.toString(), ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                )
+
+                if (newNickname != null) {
+                    updateContactNickname(context, newPhoneNumber, newNickname)
+                }
+                return true
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
         return false

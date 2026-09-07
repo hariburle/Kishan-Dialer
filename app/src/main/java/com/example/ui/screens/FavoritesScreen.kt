@@ -126,6 +126,7 @@ fun FavoritesScreen(
     isFlipToShhhEnabled: Boolean = true,
     isShhhActive: Boolean = false,
     onToggleFlipToShhh: () -> Unit = {},
+    onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -233,127 +234,62 @@ fun FavoritesScreen(
             .fillMaxSize()
             .testTag("favorites_screen")
     ) {
-        // Header info bar
+        // Search bar & action buttons
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (isConfigureMode) "Configure" else "Favorites",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = if (isConfigureMode) "Reorder & manage" else "Quick dial",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Configure / Done Toggle Icon
-                if (favorites.isNotEmpty()) {
-                    FilledIconButton(
-                        onClick = { isConfigureMode = !isConfigureMode },
-                        modifier = Modifier.size(38.dp).testTag("fav_screen_configure_button"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (isConfigureMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isConfigureMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (isConfigureMode) Icons.Default.Check else Icons.Default.Tune,
-                            contentDescription = if (isConfigureMode) "Done Configuring" else "Configure Favorites",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                if (!isConfigureMode) {
-                    // Search Contact Book toggle
-                    FilledIconButton(
-                        onClick = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) searchQuery = ""
-                        },
-                        modifier = Modifier.size(38.dp).testTag("fav_screen_search_contacts_button"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = if (isSearchActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search Contacts",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Secondary action: manual number entry dialog
-                    FilledIconButton(
-                        onClick = { showAddDialog = true },
-                        modifier = Modifier.size(38.dp).testTag("fav_screen_add_button"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Custom Number",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Real-time Search Field to search contacts and view all their numbers
-        if (isSearchActive || searchQuery.isNotBlank()) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search contacts...") },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("favorites_search_input"),
+                placeholder = { Text("Search...") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = "Search",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 trailingIcon = {
-                    IconButton(onClick = {
-                        searchQuery = ""
-                        isSearchActive = false
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Close Search",
-                            modifier = Modifier.size(20.dp)
-                        )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .testTag("favorites_search_field")
+                shape = RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
             )
+
+            if (favorites.isNotEmpty()) {
+                FilledIconButton(
+                    onClick = { isConfigureMode = !isConfigureMode },
+                    modifier = Modifier.size(48.dp).testTag("fav_screen_configure_button"),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isConfigureMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (isConfigureMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isConfigureMode) Icons.Default.Check else Icons.Default.Tune,
+                        contentDescription = if (isConfigureMode) "Done" else "Configure"
+                    )
+                }
+            }
         }
 
         if (searchQuery.isNotBlank()) {
@@ -976,6 +912,10 @@ fun FavoritesScreen(
             onCreateRule = { num ->
                 onCreateRule(num)
             },
+            onEditContact = { name, number, label, nickname ->
+                onUpdateContact(matchedContact.phoneNumber, name, number, label, nickname)
+                contactDetailsTarget = null
+            },
             onDismiss = {
                 contactDetailsTarget = null
             }
@@ -1214,37 +1154,19 @@ private fun FavoriteGridCard(
                     }
                 }
             } else {
-                // Normal Mode: WA button on the far left end, Phone Call on the far right end
-                // Spaced appropriately across opposite ends of the card to prevent accidental misclicks
+                // Normal Mode: Clean Call button on the right end
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // WhatsApp button on the far other end of the card
-                    FilledIconButton(
-                        onClick = { ContactHelper.launchWhatsAppCall(context, contact.phoneNumber) },
-                        modifier = Modifier.size(28.dp).testTag("fav_wa_btn_${contact.id}"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color(0xFF25D366),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Chat,
-                            contentDescription = "WhatsApp",
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-
-                    // Phone Call button on the opposite end
+                    // Phone Call button
                     FilledIconButton(
                         onClick = onCall,
                         modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color(0xFF16A34A),
-                            contentColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
                         Icon(

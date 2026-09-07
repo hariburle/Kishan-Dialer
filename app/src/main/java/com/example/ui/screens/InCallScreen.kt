@@ -1070,7 +1070,7 @@ fun InCallScreen(
                                     },
                                     placeholder = {
                                         Text(
-                                            "Call summary or action items (stays open while typing)...",
+                                            "Call notes & reminders...",
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                         )

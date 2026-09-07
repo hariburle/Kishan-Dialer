@@ -98,6 +98,7 @@ fun CallLogScreen(
     onRemoveSpam: (String) -> Unit = {},
     onToggleFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit = { _, _, _, _ -> },
     onUpdateNoteAndReminder: (RecentCall, String?, Long?) -> Unit = { _, _, _ -> },
+    onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var noteDialogCall by remember { mutableStateOf<RecentCall?>(null) }
@@ -138,6 +139,10 @@ fun CallLogScreen(
             },
             onCreateRule = { num ->
                 onCreateRuleForNumber(num)
+            },
+            onEditContact = { name, number, label, nickname ->
+                onUpdateContact(matchedContact.phoneNumber, name, number, label, nickname)
+                contactDetailsTarget = null
             },
             onDismiss = {
                 contactDetailsTarget = null
@@ -519,6 +524,21 @@ private fun CallLogItem(
                                 softWrap = false
                             )
                         }
+                        // Call Type Distinct Pill
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = typeColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = typeLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = typeColor,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                         // SIM Slot Indicator Pill
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -537,22 +557,32 @@ private fun CallLogItem(
                     }
 
                     if (!call.ruleMatched.isNullOrBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(top = 2.dp)
+                        Column(
+                            modifier = Modifier.padding(top = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.SmartToy,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartToy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = call.ruleMatched,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Text(
-                                text = "Automated: ${call.ruleMatched}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
+                                text = "Executed: Auto-answered + DTMF 9#",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,6 +57,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,11 +114,18 @@ fun ContactDetailsBottomSheet(
     onClearDefaultNumber: () -> Unit,
     onCreateRule: (String) -> Unit,
     onSyncToGoogle: (() -> Unit)? = null,
+    onEditContact: (name: String, phoneNumber: String, label: String, nickname: String?) -> Unit = { _, _, _, _ -> },
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editName by remember(contact) { mutableStateOf(contact.name) }
+    var editNumber by remember(contact) { mutableStateOf(contact.phoneNumber) }
+    var editLabel by remember(contact) { mutableStateOf(contact.label) }
+    var editNickname by remember(contact) { mutableStateOf(contact.nickname ?: "") }
 
     // Current default/primary number for this contact - reactive to user changes
     var currentDefaultNumber by remember(favoriteContact?.phoneNumber, contact.phoneNumber) {
@@ -163,10 +172,11 @@ fun ContactDetailsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
+                .padding(top = 12.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header: Avatar, Name, and Close Button
@@ -174,15 +184,32 @@ fun ContactDetailsBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.TopEnd
             ) {
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(36.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    IconButton(
+                        onClick = { showEditDialog = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Contact",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Column(
@@ -249,73 +276,7 @@ fun ContactDetailsBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Quick Action Buttons Bar (Call, Text, WhatsApp, Star Favorite)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Call Default Button
-                ActionRoundButton(
-                    icon = Icons.Default.Call,
-                    label = "Call",
-                    containerColor = Color(0xFF16A34A),
-                    contentColor = Color.White,
-                    onClick = {
-                        val numToCall = currentDefaultNumber.ifBlank {
-                            contact.phoneNumbers.firstOrNull()?.number ?: ""
-                        }
-                        if (numToCall.isNotBlank()) {
-                            onDismiss()
-                            onCallNumber(numToCall)
-                        }
-                    }
-                )
-
-                // Message / SMS Button
-                ActionRoundButton(
-                    icon = Icons.AutoMirrored.Filled.Message,
-                    label = "Message",
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    onClick = {
-                        val numToSms = currentDefaultNumber.ifBlank {
-                            contact.phoneNumbers.firstOrNull()?.number ?: ""
-                        }
-                        if (numToSms.isNotBlank()) {
-                            val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$numToSms"))
-                            context.startActivity(smsIntent)
-                        }
-                    }
-                )
-
-                // WhatsApp Voice Call Button
-                ActionRoundButton(
-                    iconContent = { WhatsAppIcon(modifier = Modifier.size(26.dp)) },
-                    label = "WhatsApp",
-                    containerColor = Color(0xFF25D366),
-                    contentColor = Color.White,
-                    onClick = {
-                        val numToWa = currentDefaultNumber.ifBlank {
-                            contact.phoneNumbers.firstOrNull()?.number ?: ""
-                        }
-                        if (numToWa.isNotBlank()) {
-                            ContactHelper.launchWhatsAppCall(context, numToWa)
-                        }
-                    }
-                )
-
-                // Favorite Star Toggle Button
-                ActionRoundButton(
-                    icon = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                    label = if (isFavorite) "Favorited" else "Favorite",
-                    containerColor = if (isFavorite) Color(0xFFFEF3C7) else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (isFavorite) Color(0xFFD97706) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = onToggleFavorite
-                )
-            }
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (contact.isAppOnly && onSyncToGoogle != null) {
                 Spacer(modifier = Modifier.height(14.dp))
@@ -474,9 +435,11 @@ fun ContactDetailsBottomSheet(
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                // Star / Default toggle button
+                                val isMobileLabel = pn.label.isBlank() || pn.label.equals("mobile", ignoreCase = true) || pn.label.contains("mobile", ignoreCase = true)
+
+                                // 1. Star / Favorite toggle button
                                 IconButton(
                                     onClick = {
                                         if (isDefault && contact.phoneNumbers.size > 1 && favoriteContact != null) {
@@ -489,23 +452,67 @@ fun ContactDetailsBottomSheet(
                                             Toast.makeText(context, "★ Set as default: ${pn.number}", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(34.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isDefault) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = "Toggle default number",
+                                        contentDescription = "Favorite",
                                         tint = if (isDefault) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
 
-                                // Quick Call Button
+                                // 2. SMS Button
+                                IconButton(
+                                    onClick = {
+                                        val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${pn.number}"))
+                                        context.startActivity(smsIntent)
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Message,
+                                        contentDescription = "SMS",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                // 3 & 4. WhatsApp Message & WhatsApp Call (Only if Mobile)
+                                if (isMobileLabel) {
+                                    IconButton(
+                                        onClick = {
+                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = "WhatsApp Message",
+                                            tint = Color(0xFF25D366),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            ContactHelper.launchWhatsAppCall(context, pn.number)
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp)) {
+                                            WhatsAppIcon(modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+
+                                // 5. Quick Call Button
                                 FilledIconButton(
                                     onClick = {
                                         onDismiss()
                                         onCallNumber(pn.number)
                                     },
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.size(34.dp),
                                     colors = IconButtonDefaults.filledIconButtonColors(
                                         containerColor = Color(0xFF16A34A),
                                         contentColor = Color.White
@@ -513,8 +520,8 @@ fun ContactDetailsBottomSheet(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Call,
-                                        contentDescription = "Call ${pn.number}",
-                                        modifier = Modifier.size(18.dp)
+                                        contentDescription = "Phone Call",
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
@@ -966,6 +973,20 @@ fun ContactDetailsBottomSheet(
             }
         )
     }
+
+    if (showEditDialog) {
+        EditContactDialog(
+            initialName = editName,
+            initialNumber = editNumber,
+            initialLabel = editLabel,
+            initialNickname = editNickname,
+            onDismiss = { showEditDialog = false },
+            onSave = { name, number, label, nickname ->
+                onEditContact(name, number, label, nickname)
+                showEditDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -1018,4 +1039,75 @@ private fun ActionRoundButton(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+fun EditContactDialog(
+    initialName: String,
+    initialNumber: String,
+    initialLabel: String,
+    initialNickname: String,
+    onDismiss: () -> Unit,
+    onSave: (name: String, number: String, label: String, nickname: String?) -> Unit
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var number by remember { mutableStateOf(initialNumber) }
+    var label by remember { mutableStateOf(initialLabel) }
+    var nickname by remember { mutableStateOf(initialNickname) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Contact") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = number,
+                    onValueChange = { number = it },
+                    label = { Text("Phone Number") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label (e.g. Mobile, Work)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    label = { Text("Nickname (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && number.isNotBlank()) {
+                        onSave(name, number, label, nickname.ifBlank { null })
+                    }
+                }
+            ) {
+                Text("Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

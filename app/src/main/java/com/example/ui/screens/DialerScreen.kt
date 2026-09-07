@@ -88,11 +88,13 @@ fun DialerScreen(
     onCreateRuleForNumber: (String) -> Unit,
     onAddFavorite: (String, String, String, String?) -> Unit,
     onDeleteFavorite: (FavoriteContact) -> Unit,
+    onAssignSpeedDial: (FavoriteContact, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     var showContactPicker by remember { mutableStateOf(false) }
     var showAddFavoriteDialog by remember { mutableStateOf(false) }
+    var assignSpeedDialSlotTarget by remember { mutableStateOf<Int?>(null) }
     var matchedContact by remember { mutableStateOf<DeviceContact?>(null) }
     var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
     var speedDialToast by remember { mutableStateOf<String?>(null) }
@@ -510,7 +512,8 @@ fun DialerScreen(
                                     onPlaceCall(fav.phoneNumber, null)
                                 }
                             } else {
-                                speedDialToast = "#$slotNum is unassigned"
+                                speedDialToast = "Assign contact to #$slotNum"
+                                assignSpeedDialSlotTarget = slotNum
                             }
                         }
                     }
@@ -742,6 +745,26 @@ fun DialerScreen(
                 multiNumberSpeedDialSlot = null
                 multiNumberFavoriteTarget = null
             }
+        )
+    }
+
+    if (assignSpeedDialSlotTarget != null) {
+        val targetSlot = assignSpeedDialSlotTarget!!
+        ContactPickerDialog(
+            favorites = favorites,
+            onContactSelected = { name, number, photoUri ->
+                val existingFav = favorites.firstOrNull { it.phoneNumber == number || it.name.equals(name, ignoreCase = true) }
+                if (existingFav != null) {
+                    onAssignSpeedDial(existingFav, targetSlot)
+                } else {
+                    onAddFavorite(name, number, "Mobile", photoUri)
+                    // We can also find the newly added favorite or pass callback
+                }
+                speedDialToast = "Assigned to #$targetSlot"
+                assignSpeedDialSlotTarget = null
+            },
+            onDismiss = { assignSpeedDialSlotTarget = null },
+            title = "Assign Speed Dial #$targetSlot"
         )
     }
 }

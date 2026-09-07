@@ -197,6 +197,7 @@ object OngoingCallNotificationHelper {
                 "Hang up",
                 hangupPendingIntent
             )
+            builder.setFullScreenIntent(contentPendingIntent, true)
         }
 
         return builder.build()

@@ -45,6 +45,11 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +78,11 @@ fun RulesScreen(
     rules: List<CallerRule>,
     automationLogs: List<AutomationLog>,
     favorites: List<FavoriteContact> = emptyList(),
+    themeMode: String = "system",
+    onSetThemeMode: (String) -> Unit = {},
+    whatsAppCallMode: String = "ask_learn",
+    onSetWhatsAppCallMode: (String) -> Unit = {},
+    onResetWhatsAppChoices: () -> Unit = {},
     onToggleRule: (CallerRule) -> Unit,
     onSaveRule: (CallerRule) -> Unit,
     onDeleteRule: (CallerRule) -> Unit,
@@ -83,6 +93,7 @@ fun RulesScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showDialog by rememberSaveable { mutableStateOf(false) }
+    var showHistoryDialog by rememberSaveable { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<CallerRule?>(null) }
 
     LaunchedEffect(initiallyShowAddRuleWithNumber) {
@@ -120,8 +131,8 @@ fun RulesScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Execution History (${automationLogs.size})") },
-                    icon = { Icon(Icons.Default.History, contentDescription = null) }
+                    text = { Text("Settings") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) }
                 )
             }
 
@@ -165,6 +176,7 @@ fun RulesScreen(
                         items(rules, key = { it.id }) { rule ->
                             RuleCard(
                                 rule = rule,
+                                automationLogs = automationLogs,
                                 onToggle = { onToggleRule(rule) },
                                 onEdit = {
                                     editingRule = rule
@@ -179,78 +191,190 @@ fun RulesScreen(
                     }
                 }
             } else {
-                // Automation Logs list
-                if (automationLogs.isEmpty()) {
+                // Settings Tab
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Appearance",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(text = "Theme Mode", fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (mode, label) ->
+                                    val selected = themeMode == mode
+                                    AssistChip(
+                                        onClick = { onSetThemeMode(mode) },
+                                        label = { Text(label) },
+                                        leadingIcon = if (selected) {
+                                            { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "WhatsApp Audio Calls",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(text = "WhatsApp Call Integration Mode", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                            val options = listOf(
+                                "all_international" to "All International Numbers",
+                                "ask_learn" to "Ask & Learn",
+                                "ask_always" to "Ask Always",
+                                "never" to "Never"
+                            )
+                            options.forEach { (mode, label) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSetWhatsAppCallMode(mode) }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = whatsAppCallMode == mode,
+                                        onClick = { onSetWhatsAppCallMode(mode) },
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Text(text = label, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            OutlinedButton(
+                                onClick = onResetWhatsAppChoices,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Reset Choices and Learn Memory", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Footer credit
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No automation history yet.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Developed by Hari Burle with Google AI Studio",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
                     }
-                } else {
-                    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Past Automations",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            TextButton(onClick = onClearLogs) {
-                                Text("Clear History")
-                            }
-                        }
+                    Spacer(modifier = Modifier.height(72.dp))
+                }
+            }
+        }
 
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(automationLogs, key = { it.id }) { log ->
-                                AutomationLogItem(log = log)
-                            }
-                        }
+        // Bottom Action Row for Add Rule and Execution History in Tab 0
+        if (selectedTab == 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ExtendedFloatingActionButton(
+                        onClick = { showHistoryDialog = true },
+                        icon = { Icon(Icons.Default.History, contentDescription = null) },
+                        text = { Text("History (${automationLogs.size})") },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    FloatingActionButton(
+                        onClick = {
+                            editingRule = CallerRule(
+                                name = "New Automation Rule",
+                                phoneNumberPattern = "",
+                                isEnabled = true,
+                                autoAnswer = true,
+                                answerDelaySec = 1,
+                                dtmfSequence = "9#",
+                                dtmfDelayMs = 800,
+                                sendSms = false,
+                                smsMessage = "Automated reply sent.",
+                                autoHangup = true,
+                                hangupDelaySec = 2
+                            )
+                            showDialog = true
+                        },
+                        modifier = Modifier.testTag("add_rule_fab"),
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Rule")
                     }
                 }
             }
         }
 
-        // Floating Action Button to Add Rule
-        if (selectedTab == 0) {
-            FloatingActionButton(
-                onClick = {
-                    editingRule = CallerRule(
-                        name = "New Automation Rule",
-                        phoneNumberPattern = "",
-                        isEnabled = true,
-                        autoAnswer = true,
-                        answerDelaySec = 1,
-                        dtmfSequence = "9#",
-                        dtmfDelayMs = 800,
-                        sendSms = false,
-                        smsMessage = "Automated reply sent.",
-                        autoHangup = true,
-                        hangupDelaySec = 2
-                    )
-                    showDialog = true
+        // Execution History Dialog
+        if (showHistoryDialog) {
+            AlertDialog(
+                onDismissRequest = { showHistoryDialog = false },
+                title = { Text("Execution History (${automationLogs.size})") },
+                text = {
+                    if (automationLogs.isEmpty()) {
+                        Text("No automation history yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Recent logs", style = MaterialTheme.typography.titleSmall)
+                                TextButton(onClick = onClearLogs) {
+                                    Text("Clear")
+                                }
+                            }
+                            automationLogs.forEach { log ->
+                                AutomationLogItem(log = log)
+                            }
+                        }
+                    }
                 },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .testTag("add_rule_fab"),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Rule")
-            }
+                confirmButton = {
+                    TextButton(onClick = { showHistoryDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
     }
 
@@ -277,10 +401,12 @@ fun RulesScreen(
 @Composable
 private fun RuleCard(
     rule: CallerRule,
+    automationLogs: List<AutomationLog> = emptyList(),
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val runCount = automationLogs.count { it.ruleName.equals(rule.name, ignoreCase = true) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -305,12 +431,31 @@ private fun RuleCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = rule.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = rule.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (runCount > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "Triggered $runCount times",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "Matches: ${rule.phoneNumberPattern.ifBlank { "Any Caller (*)" }}",
                         style = MaterialTheme.typography.bodySmall,

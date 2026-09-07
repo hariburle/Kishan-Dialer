@@ -50,6 +50,30 @@ class MainViewModel(
     private val appContext: Context
 ) : ViewModel() {
 
+    // Preferences for Theme and WhatsApp calls
+    private val prefs = appContext.getSharedPreferences("kishan_dialer_prefs", Context.MODE_PRIVATE)
+
+    private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: String) {
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode).apply()
+    }
+
+    private val _whatsAppCallMode = MutableStateFlow(prefs.getString("whatsapp_call_mode", "never") ?: "never")
+    val whatsAppCallMode: StateFlow<String> = _whatsAppCallMode.asStateFlow()
+
+    fun setWhatsAppCallMode(mode: String) {
+        _whatsAppCallMode.value = mode
+        prefs.edit().putString("whatsapp_call_mode", mode).apply()
+    }
+
+    fun resetWhatsAppChoices() {
+        _whatsAppCallMode.value = "never"
+        prefs.edit().remove("whatsapp_call_mode").remove("whatsapp_learned_choices").apply()
+    }
+
     // Dialer Input
     private val _dialerNumber = MutableStateFlow("")
     val dialerNumber: StateFlow<String> = _dialerNumber.asStateFlow()
@@ -719,6 +743,17 @@ class MainViewModel(
             }
             // Assign slot to target contact
             repository.updateFavorite(contact.copy(speedDialSlot = slot))
+        }
+    }
+
+    fun updateContact(oldNumber: String, newName: String, newNumber: String, newLabel: String, newNickname: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            ContactHelper.updateContactDetails(appContext, oldNumber, newName, newNumber, newLabel, newNickname)
+            val fav = favorites.value.firstOrNull { it.phoneNumber == oldNumber }
+            if (fav != null) {
+                repository.updateFavorite(fav.copy(name = newName, phoneNumber = newNumber, label = newLabel))
+            }
+            syncWithDeviceContacts()
         }
     }
 

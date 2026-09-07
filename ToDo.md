@@ -16,6 +16,7 @@
 
 
 ## Completed in this update
+- [x] **Contact Details Sizing & Edge Padding**: Added status bar padding and top spacing to `ContactDetailsBottomSheet` so that long call history lists and scrolling headers respect screen bounds and do not scroll over the top edge of the screen.
 - [x] **Ignore Popular Contacts**: Added option in favorite/popular screen edit mode to ignore/hide specific contacts from the popular section, with an "Ignored Popular Contacts" restoration section.
 - [x] **Search Results Enhancement**: Updated search results in favorites to include "Add to Favorites" and dual-action Phone/WhatsApp call buttons for each contact number.
 - [x] **Favorites Panel Behavior**: Tapping a favorite in the Contacts panel now opens the contact details sheet instead of single-touch dialing.

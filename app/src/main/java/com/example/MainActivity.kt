@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
@@ -107,7 +108,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MyApplicationTheme {
+            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val darkTheme = when (themeMode) {
+                "light" -> false
+                "dark" -> true
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            MyApplicationTheme(darkTheme = darkTheme) {
                 if (isInPipMode) {
                     PipCallContent(viewModel = viewModel)
                 } else {
@@ -213,6 +220,8 @@ fun MainAppContent(
     val isFlipToShhhEnabled by viewModel.isFlipToShhhEnabled.collectAsStateWithLifecycle()
     val isShhhActive by viewModel.isShhhActive.collectAsStateWithLifecycle()
     val isCallScreenMinimized by viewModel.isCallScreenMinimized.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val whatsAppCallMode by viewModel.whatsAppCallMode.collectAsStateWithLifecycle()
 
     LaunchedEffect(activeCall) {
         if (activeCall == null) {
@@ -266,19 +275,7 @@ fun MainAppContent(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    CenterAlignedTopAppBar(
-                        title = {
-                            Text(
-                                text = "Kishan Dialer",
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    )
-
+                Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
                     // Minimized Ongoing Call Timer Banner (Simulating native dialer ongoing call state inside the app)
                     AnimatedVisibility(
                         visible = activeCall != null && isCallScreenMinimized && activeCall?.state != android.telecom.Call.STATE_DISCONNECTED,
@@ -549,6 +546,11 @@ fun MainAppContent(
                         rules = rules,
                         automationLogs = automationLogs,
                         favorites = favorites,
+                        themeMode = themeMode,
+                        onSetThemeMode = { viewModel.setThemeMode(it) },
+                        whatsAppCallMode = whatsAppCallMode,
+                        onSetWhatsAppCallMode = { viewModel.setWhatsAppCallMode(it) },
+                        onResetWhatsAppChoices = { viewModel.resetWhatsAppChoices() },
                         onToggleRule = { viewModel.toggleRuleEnabled(it) },
                         onSaveRule = { viewModel.saveRule(it) },
                         onDeleteRule = { viewModel.deleteRule(it) },

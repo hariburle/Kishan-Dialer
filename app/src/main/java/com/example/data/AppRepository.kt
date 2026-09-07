@@ -50,4 +50,14 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun deleteSpamNumber(spam: SpamNumber) = appDao.deleteSpamNumber(spam)
 
     suspend fun deleteSpamByNumber(number: String) = appDao.deleteSpamByNumber(number)
+
+    suspend fun getIgnoredContactByNumber(number: String): IgnoredContact? = appDao.getIgnoredContactByNumber(number)
+
+    val ignoredContacts: Flow<List<IgnoredContact>> = appDao.getAllIgnoredContacts()
+
+    suspend fun insertIgnoredContact(ignored: IgnoredContact) = appDao.insertIgnoredContact(ignored)
+
+    suspend fun deleteIgnoredContact(ignored: IgnoredContact) = appDao.deleteIgnoredContact(ignored)
+
+    suspend fun deleteIgnoredContactByNumber(number: String) = appDao.deleteIgnoredContactByNumber(number)
 }

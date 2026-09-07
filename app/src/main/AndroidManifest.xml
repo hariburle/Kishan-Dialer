@@ -47,6 +47,8 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:theme="@style/Theme.MyApplication">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -87,12 +89,19 @@
             </intent-filter>
         </service>
 
+        <!-- Foreground Service for ongoing call notification and lockscreen banner -->
+        <service
+            android:name=".telecom.CallForegroundService"
+            android:foregroundServiceType="phoneCall"
+            android:exported="false" />
+
         <!-- Call Notification Receiver -->
         <receiver
             android:name=".telecom.CallNotificationReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.telecom.ACTION_HANGUP" />
+                <action android:name="com.example.telecom.ACTION_ANSWER" />
                 <action android:name="com.example.telecom.ACTION_TOGGLE_MUTE" />
                 <action android:name="com.example.telecom.ACTION_TOGGLE_SPEAKER" />
             </intent-filter>

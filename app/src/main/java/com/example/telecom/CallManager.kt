@@ -83,13 +83,23 @@ object CallManager {
         private set
 
     private var simulatedTimerJob: Job? = null
+    private var appContext: Context? = null
+
+    fun init(context: Context) {
+        this.appContext = context.applicationContext
+        OngoingCallNotificationHelper.createNotificationChannel(context)
+    }
 
     fun setTelecomService(service: TelecomCallService?) {
         this.telecomService = service
+        if (service != null) {
+            this.appContext = service.applicationContext
+        }
     }
 
     fun onCallAdded(call: Call, context: Context) {
         this.nativeCall = call
+        this.appContext = context.applicationContext
         val number = extractPhoneNumber(call)
         val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
@@ -130,6 +140,7 @@ object CallManager {
                     } else current.connectTimeMillis
 
                     _activeCall.value = current.copy(state = state, connectTimeMillis = connectTime)
+                    CallForegroundService.start(context)
                     OngoingCallNotificationHelper.showCallNotification(context, _activeCall.value!!)
                 }
 
@@ -139,6 +150,7 @@ object CallManager {
             }
         })
 
+        CallForegroundService.start(context)
         OngoingCallNotificationHelper.showCallNotification(context, callInfo)
 
         // Check Do Not Disturb (DND) status
@@ -171,7 +183,12 @@ object CallManager {
         automationJob = null
         simulatedTimerJob?.cancel()
         simulatedTimerJob = null
+        CallForegroundService.stop(context)
         OngoingCallNotificationHelper.cancelCallNotification(context)
+        appContext?.let { ctx ->
+            CallForegroundService.stop(ctx)
+            OngoingCallNotificationHelper.cancelCallNotification(ctx)
+        }
 
         if (callInfo != null) {
             val duration = if (callInfo.connectTimeMillis > 0) {
@@ -395,7 +412,12 @@ object CallManager {
                 connectTimeMillis = System.currentTimeMillis()
             )
             _activeCall.value = updated
+            appContext?.let { ctx ->
+                CallForegroundService.start(ctx)
+                OngoingCallNotificationHelper.showCallNotification(ctx, updated)
+            }
             telecomService?.let {
+                CallForegroundService.start(it)
                 OngoingCallNotificationHelper.showCallNotification(it, updated)
             }
         } else {
@@ -410,7 +432,9 @@ object CallManager {
     fun declineCall() {
         val current = _activeCall.value ?: return
         if (current.isSimulated) {
-            _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
+            appContext?.let { handleCallEnded(it, current) } ?: run {
+                _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
+            }
         } else {
             try {
                 nativeCall?.reject(false, null)
@@ -432,7 +456,9 @@ object CallManager {
     fun disconnectCall() {
         val current = _activeCall.value ?: return
         if (current.isSimulated) {
-            _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
+            appContext?.let { handleCallEnded(it, current) } ?: run {
+                _activeCall.value = current.copy(state = Call.STATE_DISCONNECTED)
+            }
         } else {
             try {
                 nativeCall?.disconnect()
@@ -480,12 +506,18 @@ object CallManager {
         _currentAudioRoute.value = route
         _isSpeakerOn.value = (route == CallAudioState.ROUTE_SPEAKER)
         telecomService?.setAudioRoute(route)
+        appContext?.let { ctx ->
+            _activeCall.value?.let { OngoingCallNotificationHelper.showCallNotification(ctx, it) }
+        }
     }
 
     fun toggleMute() {
         val newMuted = !_isMuted.value
         _isMuted.value = newMuted
         telecomService?.setMuted(newMuted)
+        appContext?.let { ctx ->
+            _activeCall.value?.let { OngoingCallNotificationHelper.showCallNotification(ctx, it) }
+        }
     }
 
     fun toggleSpeaker() {
@@ -520,6 +552,7 @@ object CallManager {
      * Simulator for testing in emulator environment where no GSM carrier is present.
      */
     fun startSimulatedIncomingCall(context: Context, number: String, name: String, reason: String? = null) {
+        appContext = context.applicationContext
         automationJob?.cancel()
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
         val communityInfo = if (lookedUp == null) com.example.util.CommunityCallerIdService.lookup(number) else null
@@ -538,10 +571,13 @@ object CallManager {
             communityInfo = communityInfo
         )
         _activeCall.value = callInfo
+        CallForegroundService.start(context)
+        OngoingCallNotificationHelper.showCallNotification(context, callInfo)
         checkAndExecuteAutomation(context, number, true)
     }
 
     fun startSimulatedOutgoingCall(context: Context, number: String, reason: String? = null) {
+        appContext = context.applicationContext
         automationJob?.cancel()
         val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
@@ -567,6 +603,7 @@ object CallManager {
             communityInfo = communityInfo
         )
         _activeCall.value = callInfo
+        CallForegroundService.start(context)
         OngoingCallNotificationHelper.showCallNotification(context, callInfo)
 
         scope.launch {
@@ -579,6 +616,7 @@ object CallManager {
                     connectTimeMillis = System.currentTimeMillis()
                 )
                 _activeCall.value = updated
+                CallForegroundService.start(context)
                 OngoingCallNotificationHelper.showCallNotification(context, updated)
             }
         }

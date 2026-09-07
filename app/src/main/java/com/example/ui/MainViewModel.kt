@@ -15,6 +15,7 @@ import com.example.data.AppRepository
 import com.example.data.AutomationLog
 import com.example.data.CallerRule
 import com.example.data.FavoriteContact
+import com.example.data.IgnoredContact
 import com.example.data.RecentCall
 import com.example.telecom.ActiveCallInfo
 import com.example.telecom.AutomationStep
@@ -115,6 +116,9 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val spamNumbers: StateFlow<List<com.example.data.SpamNumber>> = repository.spamNumbers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val ignoredContacts: StateFlow<List<IgnoredContact>> = repository.ignoredContacts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val automationLogs: StateFlow<List<AutomationLog>> = repository.recentLogs
@@ -663,6 +667,41 @@ class MainViewModel(
     fun removeSpam(phoneNumber: String) {
         viewModelScope.launch {
             repository.deleteSpamByNumber(phoneNumber)
+        }
+    }
+
+    fun ignorePopularContact(phoneNumber: String, name: String, category: String, tag: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertIgnoredContact(
+                IgnoredContact(
+                    phoneNumber = phoneNumber,
+                    name = name,
+                    category = category,
+                    tag = tag,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun unignorePopularContact(phoneNumber: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteIgnoredContactByNumber(phoneNumber)
+        }
+    }
+
+    fun updateIgnoredContactTag(phoneNumber: String, newTag: String, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = repository.getIgnoredContactByNumber(phoneNumber)
+            if (existing != null) {
+                repository.insertIgnoredContact(
+                    existing.copy(tag = newTag, name = newName)
+                )
+            } else {
+                repository.insertIgnoredContact(
+                    IgnoredContact(phoneNumber = phoneNumber, name = newName, tag = newTag)
+                )
+            }
         }
     }
 

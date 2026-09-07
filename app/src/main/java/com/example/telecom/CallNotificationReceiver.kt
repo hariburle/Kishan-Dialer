@@ -16,12 +16,15 @@ class CallNotificationReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_ANSWER -> {
                 CallManager.answerCall()
+                CallForegroundService.start(context)
                 CallManager.activeCall.value?.let {
                     OngoingCallNotificationHelper.showCallNotification(context, it)
                 }
             }
             ACTION_HANGUP -> {
                 CallManager.disconnectCall()
+                CallForegroundService.stop(context)
+                OngoingCallNotificationHelper.cancelCallNotification(context)
             }
             ACTION_TOGGLE_MUTE -> {
                 CallManager.toggleMute()

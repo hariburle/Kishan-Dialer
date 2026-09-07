@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -64,6 +65,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -316,37 +318,57 @@ fun InCallScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Section: Status, Caller details
+            // Top Section: Minimize button, Status, Caller details
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(top = 16.dp)
+                modifier = Modifier.padding(top = 8.dp)
             ) {
-                // Status Chip
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            text = stateLabel,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                // Top row with minimize button and status chip
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.testTag("minimize_call_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Minimize call",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (callInfo.state == Call.STATE_ACTIVE)
-                            MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                    leadingIcon = {
-                        if (automationStep?.isRunning == true) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
-                )
+
+                    // Status Chip
+                    AssistChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                text = stateLabel,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (callInfo.state == Call.STATE_ACTIVE)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        leadingIcon = {
+                            if (automationStep?.isRunning == true) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.size(48.dp))
+                }
 
                 // Caller Avatar (shows contact photo if available)
                 Surface(

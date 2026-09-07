@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import com.example.ui.components.WhatsAppIcon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -85,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.FavoriteContact
+import com.example.data.IgnoredContact
 import com.example.data.RecentCall
 import com.example.ui.components.AddFavoriteDialog
 import com.example.ui.components.ContactDetailsBottomSheet
@@ -108,6 +110,7 @@ data class PopularContactItem(
 fun FavoritesScreen(
     favorites: List<FavoriteContact>,
     recentCalls: List<RecentCall> = emptyList(),
+    ignoredContacts: List<IgnoredContact> = emptyList(),
     onSelectNumber: (String) -> Unit,
     onCallNumber: (String) -> Unit,
     onCreateRule: (String) -> Unit,
@@ -117,6 +120,9 @@ fun FavoritesScreen(
     onMoveFavorite: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onEditFavorite: (FavoriteContact, String?) -> Unit = { _, _ -> },
     onUpdateFavoriteNumber: (FavoriteContact, String, String) -> Unit = { _, _, _ -> },
+    onIgnoreContact: (phoneNumber: String, name: String, category: String, tag: String) -> Unit = { _, _, _, _ -> },
+    onUnignoreContact: (phoneNumber: String) -> Unit = {},
+    onUpdateIgnoredContactTag: (phoneNumber: String, newTag: String, newName: String) -> Unit = { _, _, _ -> },
     isFlipToShhhEnabled: Boolean = true,
     isShhhActive: Boolean = false,
     onToggleFlipToShhh: () -> Unit = {},
@@ -127,6 +133,7 @@ fun FavoritesScreen(
     var showContactPicker by remember { mutableStateOf(false) }
     var speedDialTargetContact by remember { mutableStateOf<FavoriteContact?>(null) }
     var editTargetContact by remember { mutableStateOf<FavoriteContact?>(null) }
+    var editTargetIgnored by remember { mutableStateOf<IgnoredContact?>(null) }
     var isConfigureMode by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -134,7 +141,6 @@ fun FavoritesScreen(
     var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactToCall by remember { mutableStateOf<FavoriteContact?>(null) }
     var contactDetailsTarget by remember { mutableStateOf<Pair<DeviceContact, FavoriteContact?>?>(null) }
-    var ignoredPopularNumbers by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -142,7 +148,14 @@ fun FavoritesScreen(
         }
     }
 
-    val popularContacts = remember(deviceContacts, favorites, recentCalls, ignoredPopularNumbers) {
+    val ignoredNorms = remember(ignoredContacts) {
+        ignoredContacts.map { it.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) }.toSet()
+    }
+    val ignoredNames = remember(ignoredContacts) {
+        ignoredContacts.map { it.name.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+    }
+
+    val popularContacts = remember(deviceContacts, favorites, recentCalls, ignoredContacts) {
         val favNumbers = favorites.map { it.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) }.filter { it.isNotBlank() }.toSet()
         val favNames = favorites.map { it.name.trim().lowercase() }.toSet()
 
@@ -161,7 +174,10 @@ fun FavoritesScreen(
 
         fun isIgnored(norm: String, name: String): Boolean {
             val nameLower = name.trim().lowercase()
-            return ignoredPopularNumbers.contains(norm) || ignoredPopularNumbers.any { nameLower.contains(it) }
+            return ignoredNorms.contains(norm) || ignoredNames.any { nameLower.contains(it) } || ignoredContacts.any { ic ->
+                val icNorm = ic.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
+                icNorm == norm || (ic.tag.isNotBlank() && nameLower.contains(ic.tag.trim().lowercase()))
+            }
         }
 
         // 1. Device contacts that have call counts
@@ -207,29 +223,7 @@ fun FavoritesScreen(
             }
         }
 
-        // 3. If list is small and device contacts exist, populate from contacts
-        if (list.size < 4 && deviceContacts.isNotEmpty()) {
-            deviceContacts.filter { dc ->
-                val norm = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
-                val nameLower = dc.name.trim().lowercase()
-                val isExcluded = excludedNames.any { nameLower.contains(it) }
-                norm.isNotBlank() && !favNumbers.contains(norm) && !favNames.contains(nameLower) && !isExcluded && !isIgnored(norm, dc.name)
-            }.take(8).forEach { dc ->
-                val norm = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
-                if (seenNorms.add(norm)) {
-                    list.add(
-                        PopularContactItem(
-                            name = dc.name,
-                            phoneNumber = dc.phoneNumber,
-                            label = dc.label,
-                            photoUri = dc.photoUri,
-                            callCount = 1,
-                            deviceContact = dc
-                        )
-                    )
-                }
-            }
-        }
+        // 3. (Removed random fallback to contacts never called)
 
         list.sortedByDescending { it.callCount }.take(4)
     }
@@ -777,8 +771,7 @@ fun FavoritesScreen(
                                     onAddFavorite(popItem.name, popItem.phoneNumber, popItem.label, popItem.photoUri)
                                 },
                                 onIgnore = {
-                                    val norm = popItem.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
-                                    ignoredPopularNumbers = ignoredPopularNumbers + norm
+                                    onIgnoreContact(popItem.phoneNumber, popItem.name, popItem.label, popItem.name)
                                 },
                                 onClick = {
                                     val dc = popItem.deviceContact ?: DeviceContact(
@@ -793,39 +786,78 @@ fun FavoritesScreen(
                             )
                         }
 
-                        if (isConfigureMode && ignoredPopularNumbers.isNotEmpty()) {
+                        if (isConfigureMode && ignoredContacts.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = "Ignored Popular Contacts (${ignoredPopularNumbers.size})",
+                                        text = "Ignored Popular Callers (${ignoredContacts.size})",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        for (num in ignoredPopularNumbers) {
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                                modifier = Modifier.clickable {
-                                                    ignoredPopularNumbers = ignoredPopularNumbers - num
-                                                }
+                                    Text(
+                                        text = "View ignored callers, restore them, or fix any wrong taggings.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                    for (ignored in ignoredContacts) {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                            ),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = ignored.name.ifBlank { ignored.tag.ifBlank { "Ignored Caller" } },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "${ignored.phoneNumber} • Tag: ${ignored.tag.ifBlank { "None" }}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                                 Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Text(text = num, style = MaterialTheme.typography.labelSmall)
-                                                    Icon(imageVector = Icons.Default.Check, contentDescription = "Restore", modifier = Modifier.size(14.dp))
+                                                    IconButton(
+                                                        onClick = { editTargetIgnored = ignored },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Edit,
+                                                            contentDescription = "Fix Tag / Edit",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                    IconButton(
+                                                        onClick = { onUnignoreContact(ignored.phoneNumber) },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Check,
+                                                            contentDescription = "Restore",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -847,6 +879,18 @@ fun FavoritesScreen(
             onSave = { updatedContact, newNickname ->
                 onEditFavorite(updatedContact, newNickname)
                 editTargetContact = null
+            }
+        )
+    }
+
+    // Edit Ignored Contact Dialog
+    if (editTargetIgnored != null) {
+        EditIgnoredContactDialog(
+            ignored = editTargetIgnored!!,
+            onDismiss = { editTargetIgnored = null },
+            onSave = { phone, newTag, newName ->
+                onUpdateIgnoredContactTag(phone, newTag, newName)
+                editTargetIgnored = null
             }
         )
     }
@@ -1527,6 +1571,61 @@ private fun SpeedDialAssignDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditIgnoredContactDialog(
+    ignored: IgnoredContact,
+    onDismiss: () -> Unit,
+    onSave: (phoneNumber: String, newTag: String, newName: String) -> Unit
+) {
+    var tagName by remember { mutableStateOf(ignored.tag) }
+    var contactName by remember { mutableStateOf(ignored.name) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Fix Ignored Caller Tag / Name") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Number: ${ignored.phoneNumber}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = contactName,
+                    onValueChange = { contactName = it },
+                    label = { Text("Display Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = tagName,
+                    onValueChange = { tagName = it },
+                    label = { Text("Ignore Tag / Substring") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(ignored.phoneNumber, tagName.trim(), contactName.trim())
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

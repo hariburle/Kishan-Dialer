@@ -1,8 +1,4 @@
 # Kishan Dialer — Feature Roadmap & ToDo
-- Show ongoing call timer on stauts bar like how the android dialer does.
-- Ensure DoNotDisturb status is used appropriately (Flip to Shhh)
-- In the favorites panel let us also show 'Popular' section and list contacts that I frequently contact if they are not already in the Favorites.
-- When i open a contact, can we list all the history of calls with them? figure out where is the right place to show that.
 
 ## User Request Status & Resolutions
 

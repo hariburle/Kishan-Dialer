@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.example.ui.components.WhatsAppIcon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Call
@@ -627,7 +628,12 @@ fun DialerScreen(
 
             // Call Actions Row: Standard SIM Call Button + WhatsApp Voice Call Button (with dynamic preferred sizing)
             val normNum = number.replace(Regex("[^0-9+]"), "").takeLast(10)
-            val relevantCalls = recentCalls.filter { it.phoneNumber.replace(Regex("[^0-9+]"), "").takeLast(10) == normNum }
+            val relevantCalls = recentCalls.filter { rc ->
+                val rcNorm = rc.phoneNumber.replace(Regex("[^0-9+]"), "").takeLast(10)
+                if (normNum.isNotBlank() && rcNorm.isNotBlank()) {
+                    rcNorm.endsWith(normNum) || normNum.endsWith(rcNorm)
+                } else false
+            }
             val waCallsCount = relevantCalls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) == true }
             val gsmCallsCount = relevantCalls.size - waCallsCount
             val isWaPreferred = waCallsCount > gsmCallsCount && waCallsCount > 0
@@ -663,10 +669,7 @@ fun DialerScreen(
                         contentColor = Color.White
                     )
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Chat,
-                        contentDescription = "WhatsApp",
-                        tint = Color.White,
+                    WhatsAppIcon(
                         modifier = Modifier.size(waIconSize)
                     )
                 }

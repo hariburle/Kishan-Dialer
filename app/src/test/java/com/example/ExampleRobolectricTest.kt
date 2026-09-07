@@ -47,4 +47,24 @@ class ExampleRobolectricTest {
     assertEquals("Mom", fav.name)
     assertEquals("+15552345678", fav.phoneNumber)
   }
+
+  @Test
+  fun `verify ongoing call notification banner has chronometer and public visibility`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val callInfo = com.example.telecom.ActiveCallInfo(
+      id = "test_1",
+      phoneNumber = "+15551234567",
+      displayName = "Kishan",
+      state = android.telecom.Call.STATE_ACTIVE,
+      isIncoming = false,
+      connectTimeMillis = System.currentTimeMillis() - 45000,
+      isSimulated = true
+    )
+
+    val notification = com.example.telecom.OngoingCallNotificationHelper.buildCallNotification(context, callInfo)
+    assertEquals(android.app.Notification.VISIBILITY_PUBLIC, notification.visibility)
+    assertTrue((notification.flags and android.app.Notification.FLAG_ONGOING_EVENT) != 0)
+    assertTrue(notification.extras.getBoolean(androidx.core.app.NotificationCompat.EXTRA_SHOW_CHRONOMETER))
+    assertEquals("Kishan", notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString())
+  }
 }

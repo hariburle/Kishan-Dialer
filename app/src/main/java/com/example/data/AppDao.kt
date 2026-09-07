@@ -84,4 +84,19 @@ interface AppDao {
 
     @Query("DELETE FROM offline_spam_numbers WHERE phoneNumber = :number")
     suspend fun deleteSpamByNumber(number: String)
+
+    @Query("SELECT * FROM ignored_contacts ORDER BY timestamp DESC")
+    fun getAllIgnoredContacts(): Flow<List<IgnoredContact>>
+
+    @Query("SELECT * FROM ignored_contacts WHERE phoneNumber = :number LIMIT 1")
+    suspend fun getIgnoredContactByNumber(number: String): IgnoredContact?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertIgnoredContact(ignored: IgnoredContact): Long
+
+    @Delete
+    suspend fun deleteIgnoredContact(ignored: IgnoredContact)
+
+    @Query("DELETE FROM ignored_contacts WHERE phoneNumber = :number")
+    suspend fun deleteIgnoredContactByNumber(number: String)
 }

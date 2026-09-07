@@ -68,3 +68,12 @@ data class SpamNumber(
     val isBlocked: Boolean = true
 )
 
+@Entity(tableName = "ignored_contacts")
+data class IgnoredContact(
+    @PrimaryKey val phoneNumber: String,
+    val name: String = "",
+    val category: String = "",
+    val tag: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+

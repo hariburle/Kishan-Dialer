@@ -293,7 +293,7 @@ fun ContactDetailsBottomSheet(
 
                 // WhatsApp Voice Call Button
                 ActionRoundButton(
-                    icon = Icons.Default.Chat,
+                    iconContent = { WhatsAppIcon(modifier = Modifier.size(26.dp)) },
                     label = "WhatsApp",
                     containerColor = Color(0xFF25D366),
                     contentColor = Color.White,
@@ -928,7 +928,7 @@ fun ContactDetailsBottomSheet(
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text("WA", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    WhatsAppIcon(modifier = Modifier.size(16.dp))
                                 }
                             }
                             Text(text = "Call on WhatsApp", fontWeight = FontWeight.Medium)
@@ -972,6 +972,7 @@ fun ContactDetailsBottomSheet(
 private fun ActionRoundButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     iconText: String? = null,
+    iconContent: (@Composable () -> Unit)? = null,
     label: String,
     containerColor: Color,
     contentColor: Color,
@@ -991,7 +992,9 @@ private fun ActionRoundButton(
                 .clickable(onClick = onClick)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                if (icon != null) {
+                if (iconContent != null) {
+                    iconContent()
+                } else if (icon != null) {
                     Icon(
                         imageVector = icon,
                         contentDescription = label,

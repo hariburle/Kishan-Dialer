@@ -43,6 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.RecentCall
+import com.example.ui.components.ContactDetailsBottomSheet
+import com.example.util.ContactPhoneNumber
+import com.example.util.DeviceContact
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -100,6 +103,47 @@ fun CallLogScreen(
     var noteDialogCall by remember { mutableStateOf<RecentCall?>(null) }
     var noteText by remember { mutableStateOf("") }
     var reminderMinutes by remember { mutableStateOf<Long?>(null) }
+    var contactDetailsTarget by remember { mutableStateOf<Pair<DeviceContact, FavoriteContact?>?>(null) }
+
+    if (contactDetailsTarget != null) {
+        val (matchedContact, favContactInitial) = contactDetailsTarget!!
+        val favContact = favContactInitial?.let { f ->
+            favorites.find { it.id == f.id } ?: f
+        }
+        ContactDetailsBottomSheet(
+            contact = matchedContact,
+            favoriteContact = favContact,
+            isFavorite = favContact != null,
+            onCallNumber = { num ->
+                onCallBack(num)
+            },
+            onSelectInDialer = { num ->
+                onCallBack(num)
+            },
+            onToggleFavorite = {
+                val favName = matchedContact.nickname?.ifBlank { null } ?: matchedContact.name
+                onToggleFavorite(favName, favContact?.phoneNumber ?: matchedContact.phoneNumber, favContact?.label ?: matchedContact.label, matchedContact.photoUri)
+            },
+            onSetAsDefaultNumber = { newNum, newLabel ->
+                if (favContact != null) {
+                    onToggleFavorite(favContact.name, newNum, newLabel, matchedContact.photoUri)
+                } else {
+                    onToggleFavorite(matchedContact.name, newNum, newLabel, matchedContact.photoUri)
+                }
+            },
+            onClearDefaultNumber = {
+                if (favContact != null) {
+                    onToggleFavorite(favContact.name, favContact.phoneNumber, favContact.label, favContact.photoUri)
+                }
+            },
+            onCreateRule = { num ->
+                onCreateRuleForNumber(num)
+            },
+            onDismiss = {
+                contactDetailsTarget = null
+            }
+        )
+    }
 
     if (noteDialogCall != null) {
         val targetCall = noteDialogCall!!
@@ -260,6 +304,22 @@ fun CallLogScreen(
                             "Mobile",
                             group.primaryCall.photoUri
                         )
+                    },
+                    onOpenDetails = {
+                        val call = group.primaryCall
+                        val contactName = call.callerName?.ifBlank { null } ?: call.phoneNumber
+                        val dc = DeviceContact(
+                            name = contactName,
+                            phoneNumber = call.phoneNumber,
+                            label = "Mobile",
+                            photoUri = call.photoUri,
+                            phoneNumbers = listOf(ContactPhoneNumber(call.phoneNumber, "Mobile"))
+                        )
+                        val matchedFav = favorites.firstOrNull { fav ->
+                            fav.phoneNumber == call.phoneNumber ||
+                            (!call.callerName.isNullOrBlank() && fav.name.equals(call.callerName, ignoreCase = true))
+                        }
+                        contactDetailsTarget = Pair(dc, matchedFav)
                     }
                 )
             }
@@ -275,7 +335,8 @@ private fun CallLogItem(
     onCreateRule: () -> Unit,
     onOpenNoteDialog: (RecentCall) -> Unit,
     onToggleSpam: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onOpenDetails: () -> Unit
 ) {
     val call = group.primaryCall
     val (typeIcon, typeColor, typeLabel) = when (call.callType) {
@@ -290,6 +351,7 @@ private fun CallLogItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onOpenDetails() }
             .testTag("call_item_${call.id}"),
         colors = CardDefaults.cardColors(
             containerColor = if (group.isSpam) {

@@ -1,12 +1,17 @@
 package com.example
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.util.Rational
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Dialpad
@@ -42,10 +48,12 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -63,8 +71,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import com.example.telecom.CallManager
 import com.example.telecom.RoleHelper
 import com.example.ui.MainViewModel
 import com.example.ui.screens.CallLogScreen
@@ -81,24 +91,34 @@ class MainActivity : ComponentActivity() {
         MainViewModel.provideFactory(this)
     }
 
+    private var isInPipMode by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        CallManager.init(applicationContext)
         com.example.telecom.FlipToShhhManager.initialize(this)
 
         val tabExtra = intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
         handleDialIntent(intent)
+        if (intent.getBooleanExtra("EXTRA_IN_CALL", false)) {
+            viewModel.maximizeCall()
+        }
 
         setContent {
             MyApplicationTheme {
-                MainAppContent(
-                    viewModel = viewModel,
-                    initialTab = tabExtra,
-                    onOpenDialNumber = { number ->
-                        viewModel.setDialerNumber(number)
-                    }
-                )
+                if (isInPipMode) {
+                    PipCallContent(viewModel = viewModel)
+                } else {
+                    MainAppContent(
+                        viewModel = viewModel,
+                        initialTab = tabExtra,
+                        onOpenDialNumber = { number ->
+                            viewModel.setDialerNumber(number)
+                        }
+                    )
+                }
             }
         }
     }
@@ -107,11 +127,40 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDialIntent(intent)
+        if (intent.getBooleanExtra("EXTRA_IN_CALL", false)) {
+            viewModel.maximizeCall()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         viewModel.refreshDefaultDialerStatus()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val active = CallManager.activeCall.value
+        if (active != null && active.state == android.telecom.Call.STATE_ACTIVE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    enterPictureInPictureMode(
+                        PictureInPictureParams.Builder()
+                            .setAspectRatio(Rational(16, 9))
+                            .build()
+                    )
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "Failed to enter PiP mode", e)
+                }
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
     }
 
     private fun handleDialIntent(intent: Intent?) {
@@ -154,6 +203,7 @@ fun MainAppContent(
     val rules by viewModel.rules.collectAsStateWithLifecycle()
     val recentCalls by viewModel.recentCalls.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val ignoredContacts by viewModel.ignoredContacts.collectAsStateWithLifecycle()
     val spamNumbers by viewModel.spamNumbers.collectAsStateWithLifecycle()
     val automationLogs by viewModel.automationLogs.collectAsStateWithLifecycle()
     val selectedSimSlot by viewModel.selectedSimSlot.collectAsStateWithLifecycle()
@@ -168,6 +218,10 @@ fun MainAppContent(
         if (activeCall == null) {
             viewModel.maximizeCall()
         }
+    }
+
+    BackHandler(enabled = activeCall != null && !isCallScreenMinimized) {
+        viewModel.minimizeCall()
     }
 
     var showDefaultAppPrompt by remember { mutableStateOf(true) }
@@ -266,27 +320,47 @@ fun MainAppContent(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Phone,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Text(
                                         text = "Ongoing call: ${activeCall?.displayName ?: "Unknown"}",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1
                                     )
                                 }
-                                Text(
-                                    text = timerText,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = timerText,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    IconButton(
+                                        onClick = { viewModel.disconnectCall() },
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .testTag("minimized_banner_hangup_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CallEnd,
+                                            contentDescription = "Hang up",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -344,6 +418,7 @@ fun MainAppContent(
                     0 -> FavoritesScreen(
                         favorites = favorites,
                         recentCalls = recentCalls,
+                        ignoredContacts = ignoredContacts,
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
@@ -371,6 +446,15 @@ fun MainAppContent(
                         },
                         onUpdateFavoriteNumber = { contact, newNum, newLabel ->
                             viewModel.updateFavoritePhoneNumber(contact, newNum, newLabel)
+                        },
+                        onIgnoreContact = { num, name, cat, tag ->
+                            viewModel.ignorePopularContact(num, name, cat, tag)
+                        },
+                        onUnignoreContact = { num ->
+                            viewModel.unignorePopularContact(num)
+                        },
+                        onUpdateIgnoredContactTag = { num, tag, name ->
+                            viewModel.updateIgnoredContactTag(num, tag, name)
                         },
                         isFlipToShhhEnabled = isFlipToShhhEnabled,
                         isShhhActive = isShhhActive,
@@ -637,6 +721,89 @@ fun MainAppContent(
                     }
                 }
             )
+        }
+    }
+}
+
+/**
+ * Clean, compact Picture-in-Picture call banner showing active call duration,
+ * caller name, and immediate hangup control when user moves to another app.
+ */
+@Composable
+fun PipCallContent(viewModel: MainViewModel) {
+    val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
+    var elapsedSeconds by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(activeCall?.connectTimeMillis) {
+        val connectTime = activeCall?.connectTimeMillis ?: 0L
+        if (connectTime > 0L) {
+            while (true) {
+                elapsedSeconds = (System.currentTimeMillis() - connectTime) / 1000
+                delay(1000)
+            }
+        } else {
+            elapsedSeconds = 0L
+        }
+    }
+
+    val minutes = elapsedSeconds / 60
+    val seconds = elapsedSeconds % 60
+    val timerText = String.format("%02d:%02d", minutes, seconds)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("pip_call_container"),
+        color = Color(0xFF16A34A)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Phone,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Column {
+                    Text(
+                        text = activeCall?.displayName ?: "Ongoing call",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = timerText,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = { viewModel.disconnectCall() },
+                modifier = Modifier
+                    .size(36.dp)
+                    .testTag("pip_hangup_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CallEnd,
+                    contentDescription = "Hang up",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

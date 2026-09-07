@@ -50,6 +50,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Security
@@ -64,6 +66,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -73,10 +76,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import com.example.data.FavoriteContact
 import com.example.data.SpamNumber
 
@@ -92,6 +91,7 @@ fun CallLogScreen(
     recentCalls: List<RecentCall>,
     spamNumbers: List<SpamNumber> = emptyList(),
     favorites: List<FavoriteContact> = emptyList(),
+    isSpamNumber: ((String) -> Boolean)? = null,
     onCallBack: (String) -> Unit,
     onCreateRuleForNumber: (String) -> Unit,
     onMarkSpam: (String) -> Unit = {},
@@ -99,6 +99,8 @@ fun CallLogScreen(
     onToggleFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit = { _, _, _, _ -> },
     onUpdateNoteAndReminder: (RecentCall, String?, Long?) -> Unit = { _, _, _ -> },
     onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
+    onDeleteCall: (RecentCall) -> Unit = {},
+    onDeleteCallsForNumber: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var noteDialogCall by remember { mutableStateOf<RecentCall?>(null) }
@@ -219,7 +221,7 @@ fun CallLogScreen(
         )
     }
     // Group consecutive calls from the same phone number
-    val groupedCalls = androidx.compose.runtime.remember(recentCalls, spamNumbers) {
+    val groupedCalls = androidx.compose.runtime.remember(recentCalls, spamNumbers, isSpamNumber) {
         val groups = mutableListOf<GroupedCallLog>()
         if (recentCalls.isEmpty()) return@remember groups
 
@@ -231,14 +233,24 @@ fun CallLogScreen(
             if (call.phoneNumber == currentGroupCall.phoneNumber && call.callType == currentGroupCall.callType) {
                 currentCount++
             } else {
-                val spam = spamNumbers.firstOrNull { it.phoneNumber == currentGroupCall.phoneNumber }
-                groups.add(GroupedCallLog(currentGroupCall, currentCount, spam != null || currentGroupCall.isSpam, spam))
+                val curDigits = currentGroupCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                val spam = spamNumbers.firstOrNull { s ->
+                    val sDigits = s.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                    s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
+                }
+                val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (spam != null)
+                groups.add(GroupedCallLog(currentGroupCall, currentCount, isSpam, spam))
                 currentGroupCall = call
                 currentCount = 1
             }
         }
-        val lastSpam = spamNumbers.firstOrNull { it.phoneNumber == currentGroupCall.phoneNumber }
-        groups.add(GroupedCallLog(currentGroupCall, currentCount, lastSpam != null || currentGroupCall.isSpam, lastSpam))
+        val curDigits = currentGroupCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+        val lastSpam = spamNumbers.firstOrNull { s ->
+            val sDigits = s.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
+        }
+        val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (lastSpam != null)
+        groups.add(GroupedCallLog(currentGroupCall, currentCount, isSpam, lastSpam))
         groups
     }
 
@@ -281,7 +293,12 @@ fun CallLogScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(groupedCalls, key = { it.primaryCall.id }) { group ->
-                val isFav = favorites.any { it.phoneNumber == group.primaryCall.phoneNumber }
+                val callDigits = group.primaryCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                val isFav = favorites.any { fav ->
+                    val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                    (callDigits.length >= 7 && favDigits == callDigits) ||
+                    (!group.primaryCall.callerName.isNullOrBlank() && fav.name.equals(group.primaryCall.callerName, ignoreCase = true))
+                }
                 CallLogItem(
                     group = group,
                     isFavorite = isFav,
@@ -325,7 +342,9 @@ fun CallLogScreen(
                             (!call.callerName.isNullOrBlank() && fav.name.equals(call.callerName, ignoreCase = true))
                         }
                         contactDetailsTarget = Pair(dc, matchedFav)
-                    }
+                    },
+                    onDeleteCall = { onDeleteCall(group.primaryCall) },
+                    onDeleteCallsForNumber = { onDeleteCallsForNumber(group.primaryCall.phoneNumber) }
                 )
             }
         }
@@ -341,7 +360,9 @@ private fun CallLogItem(
     onOpenNoteDialog: (RecentCall) -> Unit,
     onToggleSpam: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onOpenDetails: () -> Unit
+    onOpenDetails: () -> Unit,
+    onDeleteCall: () -> Unit = {},
+    onDeleteCallsForNumber: () -> Unit = {}
 ) {
     val call = group.primaryCall
     val (typeIcon, typeColor, typeLabel) = when (call.callType) {
@@ -360,7 +381,7 @@ private fun CallLogItem(
             .testTag("call_item_${call.id}"),
         colors = CardDefaults.cardColors(
             containerColor = if (group.isSpam) {
-                Color(0xFFFEF2F2)
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
             } else {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             }
@@ -473,7 +494,7 @@ private fun CallLogItem(
                     if (group.isSpam) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFFFEE2E2)
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -483,13 +504,13 @@ private fun CallLogItem(
                                 Icon(
                                     imageVector = Icons.Default.Security,
                                     contentDescription = null,
-                                    tint = Color(0xFFDC2626),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Text(
                                     text = group.spamDetails?.label ?: "Suspected Spam Caller",
                                     fontSize = 11.sp,
-                                    color = Color(0xFFDC2626),
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -785,6 +806,29 @@ private fun CallLogItem(
                                 onCreateRule()
                             }
                         )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Delete Entry") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                onDeleteCall()
+                            }
+                        )
+                        if (group.count > 1) {
+                            DropdownMenuItem(
+                                text = { Text("Clear All (${group.count}) for Number") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onDeleteCallsForNumber()
+                                }
+                            )
+                        }
                     }
                 }
             }

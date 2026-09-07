@@ -68,6 +68,10 @@ import androidx.compose.ui.unit.sp
 import com.example.data.AutomationLog
 import com.example.data.CallerRule
 import com.example.data.FavoriteContact
+import com.example.data.SpamNumber
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.TouchApp
 import com.example.ui.components.ContactPickerDialog
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -83,6 +87,12 @@ fun RulesScreen(
     whatsAppCallMode: String = "ask_learn",
     onSetWhatsAppCallMode: (String) -> Unit = {},
     onResetWhatsAppChoices: () -> Unit = {},
+    spamNumbers: List<SpamNumber> = emptyList(),
+    onRemoveSpam: (String) -> Unit = {},
+    confirmFavoritesCall: Boolean = false,
+    onSetConfirmFavoritesCall: (Boolean) -> Unit = {},
+    defaultStartTab: Int = 0,
+    onSetDefaultStartTab: (Int) -> Unit = {},
     onToggleRule: (CallerRule) -> Unit,
     onSaveRule: (CallerRule) -> Unit,
     onDeleteRule: (CallerRule) -> Unit,
@@ -269,6 +279,173 @@ fun RulesScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("Reset Choices and Learn Memory", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Call Protection & Start Screen",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = "Confirm Before Calling Favorites", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = "Displays a confirmation dialog to prevent accidental calls when tapping favorites",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = confirmFavoritesCall,
+                                    onCheckedChange = onSetConfirmFavoritesCall,
+                                    modifier = Modifier.testTag("confirm_favorites_call_switch")
+                                )
+                            }
+
+                            HorizontalDivider()
+
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(text = "Default Startup Screen", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = "Choose which tab opens first when launching the dialer",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val tabs = listOf(
+                                    0 to "Favorites",
+                                    1 to "Call Log",
+                                    2 to "Keypad Dialer",
+                                    3 to "Contacts"
+                                )
+                                tabs.forEach { (tabIndex, tabTitle) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onSetDefaultStartTab(tabIndex) }
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        RadioButton(
+                                            selected = defaultStartTab == tabIndex,
+                                            onClick = { onSetDefaultStartTab(tabIndex) },
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                        Text(text = tabTitle, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Spam & Blocked Numbers (${spamNumbers.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Review numbers flagged as spam. You can unmark or remove numbers from the spam filter at any time.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (spamNumbers.isEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Shield,
+                                            contentDescription = null,
+                                            tint = Color(0xFF16A34A),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        Text(
+                                            text = "No spam numbers registered. Your spam filter list is clear.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            } else {
+                                spamNumbers.forEach { item ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Block,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Column {
+                                                    Text(
+                                                        text = item.phoneNumber,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                    Text(
+                                                        text = item.label.ifBlank { "Marked Spam" },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
+                                            TextButton(
+                                                onClick = { onRemoveSpam(item.phoneNumber) },
+                                                modifier = Modifier.testTag("unmark_spam_${item.phoneNumber}")
+                                            ) {
+                                                Text(
+                                                    text = "Unmark (Not Spam)",
+                                                    fontSize = 12.sp,
+                                                    color = Color(0xFF16A34A),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

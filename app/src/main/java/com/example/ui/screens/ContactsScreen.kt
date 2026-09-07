@@ -70,6 +70,9 @@ fun ContactsScreen(
     onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onUpdateContact: (oldNumber: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     onSyncContactToGoogle: (DeviceContact) -> Unit = {},
+    deviceContacts: List<DeviceContact> = emptyList(),
+    onRefreshContacts: () -> Unit = {},
+    onPlaceWhatsAppCall: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -86,17 +89,34 @@ fun ContactsScreen(
     var contactForMultiCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactForMultiCall by remember { mutableStateOf<FavoriteContact?>(null) }
 
-    var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
+    var localContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
+    val effectiveContacts = if (deviceContacts.isNotEmpty()) deviceContacts else localContacts
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            deviceContacts = ContactHelper.fetchDeviceContacts(context)
+        if (deviceContacts.isEmpty()) {
+            withContext(Dispatchers.IO) {
+                localContacts = ContactHelper.fetchDeviceContacts(context)
+            }
+        }
+    }
+
+    // Keep contactForDetailsSheet in sync if contact is edited in system contacts app
+    LaunchedEffect(effectiveContacts) {
+        val current = contactForDetailsSheet ?: return@LaunchedEffect
+        val updated = effectiveContacts.firstOrNull { dc ->
+            (current.contactId != null && dc.contactId == current.contactId) ||
+            dc.phoneNumber == current.phoneNumber ||
+            dc.phoneNumbers.any { pn -> current.phoneNumbers.any { cpn -> cpn.number == pn.number } } ||
+            dc.name.equals(current.name, ignoreCase = true)
+        }
+        if (updated != null) {
+            contactForDetailsSheet = updated
         }
     }
 
     // Filter by source and search query
-    val filteredContacts = remember(deviceContacts, searchQuery, sourceFilter) {
-        var list = deviceContacts
+    val filteredContacts = remember(effectiveContacts, searchQuery, sourceFilter) {
+        var list = effectiveContacts
 
         if (searchQuery.isNotBlank()) {
             val q = searchQuery.trim().lowercase()
@@ -515,6 +535,7 @@ fun ContactsScreen(
                                     val favName = contact.nickname?.ifBlank { null } ?: contact.name
                                     onToggleFavorite(favName, contact.phoneNumber, contact.label, contact.photoUri)
                                 },
+                                onPlaceWhatsAppCall = onPlaceWhatsAppCall,
                                 onSyncToGoogle = {
                                     onSyncContactToGoogle(contact)
                                 }
@@ -697,6 +718,7 @@ private fun ContactRowItem(
     onSmsClick: (String) -> Unit,
     onCreateRule: (String) -> Unit,
     onToggleFavorite: () -> Unit,
+    onPlaceWhatsAppCall: (String) -> Unit = {},
     onSyncToGoogle: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -928,30 +950,26 @@ private fun ContactRowItem(
                                 if (isMobile) {
                                     IconButton(
                                         onClick = {
-                                            val cleanNum = pn.number.replace(Regex("[^0-9+]"), "")
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$cleanNum"))
-                                            context.startActivity(intent)
+                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
                                         },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        WhatsAppIcon(modifier = Modifier.size(16.dp))
-                                    }
-
-                                    // WhatsApp Phone Call (Mobile only)
-                                    IconButton(
-                                        onClick = {
-                                            val cleanNum = pn.number.replace(Regex("[^0-9+]"), "")
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("whatsapp://send?phone=$cleanNum"))
-                                            context.startActivity(intent)
-                                        },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(34.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.VideoCall,
-                                            contentDescription = "WhatsApp Call",
-                                            tint = Color(0xFF16A34A),
-                                            modifier = Modifier.size(16.dp)
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = "WhatsApp Message",
+                                            tint = Color(0xFF25D366),
+                                            modifier = Modifier.size(18.dp)
                                         )
+                                    }
+
+                                    // WhatsApp Audio Call (Mobile only)
+                                    IconButton(
+                                        onClick = {
+                                            onPlaceWhatsAppCall(pn.number)
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        WhatsAppIcon(modifier = Modifier.size(22.dp))
                                     }
                                 }
 

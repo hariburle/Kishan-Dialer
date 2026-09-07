@@ -194,11 +194,22 @@ object ContactHelper {
     }
 
     /**
-     * Checks if a phone number matches international WhatsApp routing rules (e.g. +91 prefix)
+     * Checks if a phone number is an international number (e.g. +91, other non-+1 prefixes, 00 or 011 prefixes).
+     */
+    fun isInternationalNumber(phoneNumber: String): Boolean {
+        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
+        if (clean.isBlank()) return false
+        if (clean.startsWith("+91") || clean.startsWith("0091") || clean.startsWith("01191")) return true
+        if (clean.startsWith("+") && !clean.startsWith("+1")) return true
+        if (clean.startsWith("011") || clean.startsWith("00")) return true
+        return false
+    }
+
+    /**
+     * Checks if a phone number matches international WhatsApp routing rules (e.g. +91 prefix or international format).
      */
     fun shouldSuggestWhatsApp(phoneNumber: String): Boolean {
-        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
-        return clean.startsWith("+91") || clean.startsWith("0091")
+        return isInternationalNumber(phoneNumber)
     }
 
     /**

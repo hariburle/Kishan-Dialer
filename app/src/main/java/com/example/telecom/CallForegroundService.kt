@@ -110,7 +110,9 @@ class CallForegroundService : Service() {
                 if (call == null || call.state == Call.STATE_DISCONNECTED) {
                     stopServiceInternal()
                 } else {
-                    OngoingCallNotificationHelper.showCallNotification(this@CallForegroundService, call)
+                    if (!CallManager.isCallUiForegrounded) {
+                        OngoingCallNotificationHelper.showCallNotification(this@CallForegroundService, call)
+                    }
                     manageTicker(call)
                 }
             }
@@ -125,7 +127,9 @@ class CallForegroundService : Service() {
                         delay(1000)
                         val active = CallManager.activeCall.value
                         if (active != null && active.state == Call.STATE_ACTIVE) {
-                            OngoingCallNotificationHelper.showCallNotification(this@CallForegroundService, active)
+                            if (!CallManager.isCallUiForegrounded) {
+                                OngoingCallNotificationHelper.showCallNotification(this@CallForegroundService, active)
+                            }
                         } else {
                             break
                         }

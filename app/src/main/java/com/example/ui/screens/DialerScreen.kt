@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,14 +18,19 @@ import androidx.compose.foundation.verticalScroll
 import com.example.ui.components.WhatsAppIcon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +38,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,38 +93,52 @@ fun DialerScreen(
     onClearDigits: () -> Unit,
     onSelectContactNumber: (String) -> Unit,
     onPlaceCall: (String, String?) -> Unit,
+    onPlaceWhatsAppCall: (String) -> Unit = { ContactHelper.launchWhatsAppCall(context, it) },
     onSimulateCall: (String, String) -> Unit,
     onCreateRuleForNumber: (String) -> Unit,
     onAddFavorite: (String, String, String, String?) -> Unit,
     onDeleteFavorite: (FavoriteContact) -> Unit,
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit = { _, _ -> },
+    onAssignSpeedDialSlot: (Int, String, String, String?) -> Unit = { _, _, _, _ -> },
+    onClearSpeedDialSlot: (Int) -> Unit = {},
+    deviceContacts: List<DeviceContact> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     var showContactPicker by remember { mutableStateOf(false) }
     var showAddFavoriteDialog by remember { mutableStateOf(false) }
     var assignSpeedDialSlotTarget by remember { mutableStateOf<Int?>(null) }
+    var speedDialActionSlotTarget by remember { mutableStateOf<Pair<Int, FavoriteContact>?>(null) }
     var matchedContact by remember { mutableStateOf<DeviceContact?>(null) }
-    var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
+    var localContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
+    val effectiveContacts = if (deviceContacts.isNotEmpty()) deviceContacts else localContacts
     var speedDialToast by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(speedDialToast) {
+        if (speedDialToast != null) {
+            kotlinx.coroutines.delay(2000)
+            speedDialToast = null
+        }
+    }
     var selectedCallReason by remember { mutableStateOf<String?>(null) }
     var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
     var multiNumberSpeedDialSlot by remember { mutableStateOf<Int?>(null) }
     var multiNumberFavoriteTarget by remember { mutableStateOf<FavoriteContact?>(null) }
 
-    // Load device contacts once for T9 search
+    // Load device contacts if not provided by parent
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val list = ContactHelper.fetchDeviceContacts(context)
-            deviceContacts = list
+        if (deviceContacts.isEmpty()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val list = ContactHelper.fetchDeviceContacts(context)
+                localContacts = list
+            }
         }
     }
 
     // Combine all contacts for T9
-    val allSearchContacts = remember(favorites, deviceContacts) {
+    val allSearchContacts = remember(favorites, effectiveContacts) {
         val list = mutableListOf<DeviceContact>()
         favorites.forEach { list.add(DeviceContact(it.name, it.phoneNumber, it.label, it.photoUri)) }
-        list.addAll(deviceContacts)
+        list.addAll(effectiveContacts)
         list.distinctBy { it.phoneNumber }
     }
 
@@ -496,21 +519,7 @@ fun DialerScreen(
                             val slotNum = digit.digitToInt()
                             val fav = favorites.firstOrNull { it.speedDialSlot == slotNum }
                             if (fav != null) {
-                                val normNum = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
-                                val matchedDevContact = deviceContacts.firstOrNull { dc ->
-                                    dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
-                                    dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
-                                    dc.name.equals(fav.name, ignoreCase = true)
-                                }
-                                if (matchedDevContact != null && matchedDevContact.phoneNumbers.size > 1) {
-                                    multiNumberContactToCall = matchedDevContact
-                                    multiNumberSpeedDialSlot = slotNum
-                                    multiNumberFavoriteTarget = fav
-                                } else {
-                                    speedDialToast = "#$slotNum: Calling ${fav.name}..."
-                                    onSelectContactNumber(fav.phoneNumber)
-                                    onPlaceCall(fav.phoneNumber, null)
-                                }
+                                speedDialActionSlotTarget = Pair(slotNum, fav)
                             } else {
                                 speedDialToast = "Assign contact to #$slotNum"
                                 assignSpeedDialSlotTarget = slotNum
@@ -526,62 +535,64 @@ fun DialerScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 10.dp),
+                .padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Contextual Caller ID ("Call Reason") Selector
-            Column(
+            // Reclaimed Space: Compact Call Reason Context Dropdown next to label
+            var showCallReasonMenu by remember { mutableStateOf(false) }
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(horizontal = 24.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Call Reason Context:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                    if (selectedCallReason != null) {
-                        Text(
-                            text = "Selected: $selectedCallReason",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(3.dp))
-                val reasons = listOf("Urgent", "Quick Question", "Work", "Personal", "Delivery")
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    AssistChip(
-                        onClick = { selectedCallReason = null },
-                        label = { Text("None", fontSize = 11.sp) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (selectedCallReason == null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
-                        )
-                    )
-                    reasons.forEach { reason ->
-                        AssistChip(
-                            onClick = {
-                                selectedCallReason = if (selectedCallReason == reason) null else reason
-                            },
-                            label = { Text(reason, fontSize = 11.sp) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (selectedCallReason == reason) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                Text(
+                    text = "Call Reason:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Box {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (selectedCallReason != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.clickable { showCallReasonMenu = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = selectedCallReason ?: "None",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (selectedCallReason != null) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedCallReason != null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Select Call Reason",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = showCallReasonMenu,
+                        onDismissRequest = { showCallReasonMenu = false }
+                    ) {
+                        val reasons = listOf(null, "Urgent", "Quick Question", "Work", "Personal", "Delivery")
+                        reasons.forEach { reason ->
+                            DropdownMenuItem(
+                                text = { Text(reason ?: "None (Clear)") },
+                                onClick = {
+                                    selectedCallReason = reason
+                                    showCallReasonMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -652,8 +663,36 @@ fun DialerScreen(
                 isWaPreferred -> 48.dp
                 else -> 60.dp
             }
-            val waIconSize = if (isWaPreferred) 32.dp else if (isGsmPreferred) 20.dp else 24.dp
-            val gsmIconSize = if (isGsmPreferred) 32.dp else if (isWaPreferred) 20.dp else 24.dp
+            val waIconSize = if (isWaPreferred) 36.dp else if (isGsmPreferred) 22.dp else 28.dp
+            val gsmIconSize = if (isGsmPreferred) 36.dp else if (isWaPreferred) 22.dp else 28.dp
+
+            // Visual badge indicating learned preferred calling mode
+            if (isWaPreferred || isGsmPreferred) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isWaPreferred) Color(0xFF25D366).copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isWaPreferred) Icons.Default.Star else Icons.Default.Call,
+                            contentDescription = null,
+                            tint = if (isWaPreferred) Color(0xFF16A34A) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (isWaPreferred) "Learned Preferred: WhatsApp Call ($waCallsCount calls)" else "Learned Preferred: SIM Call ($gsmCallsCount calls)",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isWaPreferred) Color(0xFF15803D) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -662,7 +701,7 @@ fun DialerScreen(
                 // WhatsApp Voice Call Shortcut
                 FilledIconButton(
                     onClick = {
-                        ContactHelper.launchWhatsAppCall(context, number.ifBlank { "+91" })
+                        onPlaceWhatsAppCall(number.ifBlank { "+91" })
                     },
                     modifier = Modifier
                         .size(waButtonSize)
@@ -748,19 +787,62 @@ fun DialerScreen(
         )
     }
 
+    if (speedDialActionSlotTarget != null) {
+        val (slot, fav) = speedDialActionSlotTarget!!
+        AlertDialog(
+            onDismissRequest = { speedDialActionSlotTarget = null },
+            title = {
+                Text("Speed Dial #$slot: ${fav.name}")
+            },
+            text = {
+                Text("${fav.phoneNumber} (${fav.label})")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val targetNum = fav.phoneNumber
+                        speedDialActionSlotTarget = null
+                        onSelectContactNumber(targetNum)
+                        onPlaceCall(targetNum, null)
+                    }
+                ) {
+                    Text("Call")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            val targetSlot = slot
+                            speedDialActionSlotTarget = null
+                            onClearSpeedDialSlot(targetSlot)
+                            speedDialToast = "Cleared Speed Dial #$targetSlot"
+                        }
+                    ) {
+                        Text("Clear", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(
+                        onClick = {
+                            val targetSlot = slot
+                            speedDialActionSlotTarget = null
+                            assignSpeedDialSlotTarget = targetSlot
+                        }
+                    ) {
+                        Text("Reassign")
+                    }
+                }
+            }
+        )
+    }
+
     if (assignSpeedDialSlotTarget != null) {
         val targetSlot = assignSpeedDialSlotTarget!!
         ContactPickerDialog(
             favorites = favorites,
             onContactSelected = { name, number, photoUri ->
-                val existingFav = favorites.firstOrNull { it.phoneNumber == number || it.name.equals(name, ignoreCase = true) }
-                if (existingFav != null) {
-                    onAssignSpeedDial(existingFav, targetSlot)
-                } else {
-                    onAddFavorite(name, number, "Mobile", photoUri)
-                    // We can also find the newly added favorite or pass callback
-                }
-                speedDialToast = "Assigned to #$targetSlot"
+                onAssignSpeedDialSlot(targetSlot, name, number, photoUri)
+                val displayName = name.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: name
+                speedDialToast = "Assigned $displayName to #$targetSlot"
                 assignSpeedDialSlotTarget = null
             },
             onDismiss = { assignSpeedDialSlotTarget = null },

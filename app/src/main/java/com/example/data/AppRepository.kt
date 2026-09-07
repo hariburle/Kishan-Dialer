@@ -23,6 +23,12 @@ class AppRepository(private val appDao: AppDao) {
 
     suspend fun insertRecentCall(call: RecentCall): Long = appDao.insertRecentCall(call)
 
+    suspend fun deleteRecentCall(call: RecentCall) = appDao.deleteRecentCall(call)
+
+    suspend fun deleteRecentCallById(callId: Long) = appDao.deleteRecentCallById(callId)
+
+    suspend fun deleteRecentCallsForNumber(phoneNumber: String) = appDao.deleteRecentCallsForNumber(phoneNumber)
+
     fun getCallHistoryForContact(numbers: List<String>, name: String): Flow<List<RecentCall>> =
         appDao.getCallHistoryForContact(numbers, name)
 
@@ -32,6 +38,8 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun getLatestRecentCallForNumber(phoneNumber: String): RecentCall? = appDao.getLatestRecentCallForNumber(phoneNumber)
 
     suspend fun updateRecentCall(call: RecentCall) = appDao.updateRecentCall(call)
+    suspend fun getAllRecentCallsList(): List<RecentCall> = appDao.getAllRecentCallsList()
+    suspend fun updateRecentCallSpamStatus(phoneNumber: String, isSpam: Boolean) = appDao.updateRecentCallSpamStatus(phoneNumber, isSpam)
 
     suspend fun getAllFavoritesList(): List<FavoriteContact> = appDao.getAllFavoritesList()
 
@@ -44,6 +52,7 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun deleteFavorite(contact: FavoriteContact) = appDao.deleteFavorite(contact)
 
     suspend fun getSpamByNumber(number: String): SpamNumber? = appDao.getSpamByNumber(number)
+    suspend fun getAllSpamNumbersList(): List<SpamNumber> = appDao.getAllSpamNumbersList()
 
     suspend fun insertSpamNumber(spam: SpamNumber): Long = appDao.insertSpamNumber(spam)
 

@@ -141,7 +141,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        CallManager.isCallUiForegrounded = true
+        com.example.telecom.OngoingCallNotificationHelper.cancelCallNotification(this)
         viewModel.refreshDefaultDialerStatus()
+        viewModel.refreshContacts()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CallManager.isCallUiForegrounded = false
     }
 
     override fun onUserLeaveHint() {
@@ -215,6 +223,7 @@ fun MainAppContent(
     val automationLogs by viewModel.automationLogs.collectAsStateWithLifecycle()
     val selectedSimSlot by viewModel.selectedSimSlot.collectAsStateWithLifecycle()
     val activeSims by viewModel.activeSims.collectAsStateWithLifecycle()
+    val deviceContacts by viewModel.deviceContacts.collectAsStateWithLifecycle()
     val pendingCloudConfirmation by viewModel.pendingCloudConfirmation.collectAsStateWithLifecycle()
 
     val isFlipToShhhEnabled by viewModel.isFlipToShhhEnabled.collectAsStateWithLifecycle()
@@ -222,11 +231,20 @@ fun MainAppContent(
     val isCallScreenMinimized by viewModel.isCallScreenMinimized.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val whatsAppCallMode by viewModel.whatsAppCallMode.collectAsStateWithLifecycle()
+    val defaultStartTab by viewModel.defaultStartTab.collectAsStateWithLifecycle()
+    val confirmFavoritesCall by viewModel.confirmFavoritesCall.collectAsStateWithLifecycle()
 
-    LaunchedEffect(activeCall) {
-        if (activeCall == null) {
-            viewModel.maximizeCall()
+    var hasAppliedDefaultTab by remember { mutableStateOf(false) }
+    LaunchedEffect(defaultStartTab) {
+        if (!hasAppliedDefaultTab && initialTab == 0) {
+            hasAppliedDefaultTab = true
+            selectedTab = defaultStartTab.coerceIn(0, 4)
         }
+    }
+
+    LaunchedEffect(activeCall?.id) {
+        // Whenever a call is initiated or incoming, always ensure call screen is maximized
+        viewModel.maximizeCall()
     }
 
     BackHandler(enabled = activeCall != null && !isCallScreenMinimized) {
@@ -274,95 +292,6 @@ fun MainAppContent(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-            topBar = {
-                Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                    // Minimized Ongoing Call Timer Banner (Simulating native dialer ongoing call state inside the app)
-                    AnimatedVisibility(
-                        visible = activeCall != null && isCallScreenMinimized && activeCall?.state != android.telecom.Call.STATE_DISCONNECTED,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        var elapsedSeconds by remember { mutableStateOf(0L) }
-                        LaunchedEffect(activeCall?.connectTimeMillis) {
-                            val connectTime = activeCall?.connectTimeMillis ?: 0L
-                            if (connectTime > 0L) {
-                                while (true) {
-                                    elapsedSeconds = (System.currentTimeMillis() - connectTime) / 1000
-                                    delay(1000)
-                                }
-                            } else {
-                                elapsedSeconds = 0L
-                            }
-                        }
-
-                        val minutes = elapsedSeconds / 60
-                        val seconds = elapsedSeconds % 60
-                        val timerText = String.format("%02d:%02d", minutes, seconds)
-
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.maximizeCall() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                .testTag("minimized_ongoing_call_banner"),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFF16A34A) // Standard Dialer green color
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Phone,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = "Ongoing call: ${activeCall?.displayName ?: "Unknown"}",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1
-                                    )
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Text(
-                                        text = timerText,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    IconButton(
-                                        onClick = { viewModel.disconnectCall() },
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .testTag("minimized_banner_hangup_btn")
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CallEnd,
-                                            contentDescription = "Hang up",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             bottomBar = {
                 NavigationBar(modifier = Modifier.testTag("bottom_nav_bar")) {
                     NavigationBarItem(
@@ -416,13 +345,14 @@ fun MainAppContent(
                         favorites = favorites,
                         recentCalls = recentCalls,
                         ignoredContacts = ignoredContacts,
+                        confirmFavoritesCall = confirmFavoritesCall,
+                        getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
                         },
                         onCallNumber = { num ->
-                            viewModel.setDialerNumber(num)
-                            viewModel.placeCall(context, num)
+                            viewModel.initiateCall(context, num)
                         },
                         onCreateRule = { num ->
                             ruleNumberToCreate = num
@@ -461,10 +391,9 @@ fun MainAppContent(
                         recentCalls = recentCalls,
                         spamNumbers = spamNumbers,
                         favorites = favorites,
+                        isSpamNumber = { num -> viewModel.isSpamNumber(num) },
                         onCallBack = { num ->
-                            viewModel.setDialerNumber(num)
-                            selectedTab = 2
-                            viewModel.placeCall(context, num)
+                            viewModel.initiateCall(context, num)
                         },
                         onCreateRuleForNumber = { num ->
                             ruleNumberToCreate = num
@@ -477,6 +406,15 @@ fun MainAppContent(
                         },
                         onUpdateNoteAndReminder = { call, note, rem ->
                             viewModel.updateRecentCallNoteAndReminder(call, note, rem)
+                        },
+                        onUpdateContact = { oldNum, name, number, label, nickname ->
+                            viewModel.updateContact(oldNum, name, number, label, nickname)
+                        },
+                        onDeleteCall = { call ->
+                            viewModel.deleteRecentCall(call)
+                        },
+                        onDeleteCallsForNumber = { phoneNumber ->
+                            viewModel.deleteRecentCallsForNumber(phoneNumber)
                         }
                     )
                     2 -> DialerScreen(
@@ -494,6 +432,7 @@ fun MainAppContent(
                         onClearDigits = { viewModel.clearDigits() },
                         onSelectContactNumber = { num -> viewModel.setDialerNumber(num) },
                         onPlaceCall = { num, reason -> viewModel.placeCall(context, num, reason) },
+                        onPlaceWhatsAppCall = { num -> viewModel.placeWhatsAppCall(context, num) },
                         onSimulateCall = { num, name -> viewModel.simulateIncomingCall(context, num, name) },
                         onCreateRuleForNumber = { num ->
                             ruleNumberToCreate = num
@@ -504,17 +443,26 @@ fun MainAppContent(
                         },
                         onDeleteFavorite = { fav ->
                             viewModel.deleteFavorite(fav)
-                        }
+                        },
+                        onAssignSpeedDialSlot = { slot, name, num, photoUri ->
+                            viewModel.assignSpeedDialSlot(slot, name, num, photoUri)
+                        },
+                        onClearSpeedDialSlot = { slot ->
+                            viewModel.clearSpeedDialSlot(slot)
+                        },
+                        deviceContacts = deviceContacts
                     )
                     3 -> ContactsScreen(
                         favorites = favorites,
+                        deviceContacts = deviceContacts,
+                        onRefreshContacts = { viewModel.refreshContacts() },
+                        onPlaceWhatsAppCall = { num -> viewModel.placeWhatsAppCall(context, num) },
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
                         },
                         onCallNumber = { num ->
-                            viewModel.setDialerNumber(num)
-                            viewModel.placeCall(context, num)
+                            viewModel.initiateCall(context, num)
                         },
                         onCreateRule = { num ->
                             ruleNumberToCreate = num
@@ -551,6 +499,12 @@ fun MainAppContent(
                         whatsAppCallMode = whatsAppCallMode,
                         onSetWhatsAppCallMode = { viewModel.setWhatsAppCallMode(it) },
                         onResetWhatsAppChoices = { viewModel.resetWhatsAppChoices() },
+                        spamNumbers = spamNumbers,
+                        onRemoveSpam = { viewModel.removeSpam(it) },
+                        confirmFavoritesCall = confirmFavoritesCall,
+                        onSetConfirmFavoritesCall = { viewModel.setConfirmFavoritesCall(it) },
+                        defaultStartTab = defaultStartTab,
+                        onSetDefaultStartTab = { viewModel.setDefaultStartTab(it) },
                         onToggleRule = { viewModel.toggleRuleEnabled(it) },
                         onSaveRule = { viewModel.saveRule(it) },
                         onDeleteRule = { viewModel.deleteRule(it) },
@@ -594,7 +548,8 @@ fun MainAppContent(
                         viewModel.savePostCallNote(call.phoneNumber, note, reminderTime)
                     },
                     onMarkSpam = { num -> viewModel.markAsSpam(num) },
-                    onDismiss = { viewModel.minimizeCall() }
+                    onDismiss = { viewModel.minimizeCall() },
+                    onClosePostCall = { viewModel.dismissCall() }
                 )
             }
         }

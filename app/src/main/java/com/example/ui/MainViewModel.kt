@@ -74,6 +74,46 @@ class MainViewModel(
         prefs.edit().remove("whatsapp_call_mode").remove("whatsapp_learned_choices").apply()
     }
 
+    // Explicit Not-Spam Whitelist (numbers explicitly unmarked as spam)
+    private val _notSpamWhitelist = MutableStateFlow<Set<String>>(
+        prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
+    )
+    val notSpamWhitelist: StateFlow<Set<String>> = _notSpamWhitelist.asStateFlow()
+
+    // Accidental touch protection: Ask confirmation before calling favorites
+    private val _confirmFavoritesCall = MutableStateFlow(prefs.getBoolean("confirm_fav_calls", true))
+    val confirmFavoritesCall: StateFlow<Boolean> = _confirmFavoritesCall.asStateFlow()
+
+    fun setConfirmFavoritesCall(enabled: Boolean) {
+        _confirmFavoritesCall.value = enabled
+        prefs.edit().putBoolean("confirm_fav_calls", enabled).apply()
+    }
+
+    // Default start tab: 2 (Keypad) to prevent accidental calls when opening app
+    private val _defaultStartTab = MutableStateFlow(prefs.getInt("default_start_tab", 2))
+    val defaultStartTab: StateFlow<Int> = _defaultStartTab.asStateFlow()
+
+    fun setDefaultStartTab(tabIndex: Int) {
+        _defaultStartTab.value = tabIndex
+        prefs.edit().putInt("default_start_tab", tabIndex).apply()
+    }
+
+    fun isNumberWhitelistedNotSpam(phoneNumber: String): Boolean {
+        val clean = phoneNumber.filter { it.isDigit() }.takeLast(10)
+        return _notSpamWhitelist.value.any { wl ->
+            wl == phoneNumber || (clean.length >= 7 && wl.filter { it.isDigit() }.takeLast(10) == clean)
+        }
+    }
+
+    fun isSpamNumber(phoneNumber: String): Boolean {
+        if (isNumberWhitelistedNotSpam(phoneNumber)) return false
+        val clean = phoneNumber.filter { it.isDigit() }.takeLast(10)
+        return spamNumbers.value.any { sp ->
+            val spClean = sp.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            sp.phoneNumber == phoneNumber || (clean.length >= 7 && spClean == clean)
+        }
+    }
+
     // Dialer Input
     private val _dialerNumber = MutableStateFlow("")
     val dialerNumber: StateFlow<String> = _dialerNumber.asStateFlow()
@@ -89,6 +129,12 @@ class MainViewModel(
     fun clearCloudConfirmation() {
         _pendingCloudConfirmation.value = null
     }
+
+    // Device Contacts Flow & Observer for live synchronization with system contacts app
+    private val _deviceContacts = MutableStateFlow<List<DeviceContact>>(emptyList())
+    val deviceContacts: StateFlow<List<DeviceContact>> = _deviceContacts.asStateFlow()
+
+    private var contactsObserver: android.database.ContentObserver? = null
 
     // Active Call forwarded from CallManager
     val activeCall: StateFlow<ActiveCallInfo?> = CallManager.activeCall
@@ -149,8 +195,48 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        syncWithDeviceContacts()
+        refreshContacts()
         refreshSimCards()
+        registerContactsObserver()
+    }
+
+    fun refreshContacts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val list = ContactHelper.fetchDeviceContacts(appContext)
+                _deviceContacts.value = list
+                syncWithDeviceContacts()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun registerContactsObserver() {
+        try {
+            contactsObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    refreshContacts()
+                }
+            }
+            appContext.contentResolver.registerContentObserver(
+                android.provider.ContactsContract.Contacts.CONTENT_URI,
+                true,
+                contactsObserver!!
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        contactsObserver?.let {
+            try {
+                appContext.contentResolver.unregisterContentObserver(it)
+            } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -202,15 +288,12 @@ class MainViewModel(
                     }
 
                     if (existing != null) {
-                        // Update existing contact card to ensure it uses the device's default number
-                        if (existing.phoneNumber != deviceContact.phoneNumber ||
-                            existing.name != deviceContact.name ||
+                        // Keep the user's chosen favorite phoneNumber intact; only update display name or photo
+                        if (existing.name != deviceContact.name ||
                             existing.photoUri != deviceContact.photoUri) {
                             val updated = existing.copy(
                                 name = deviceContact.name,
                                 nickname = deviceContact.nickname ?: existing.nickname,
-                                phoneNumber = deviceContact.phoneNumber,
-                                label = deviceContact.label,
                                 photoUri = deviceContact.photoUri ?: existing.photoUri
                             )
                             repository.updateFavorite(updated)
@@ -306,6 +389,7 @@ class MainViewModel(
         val cleanNumber = number.ifBlank { _dialerNumber.value }
         if (cleanNumber.isBlank()) return
         val effectiveReason = reason ?: _selectedCallReason.value
+        maximizeCall()
 
         try {
             val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
@@ -359,6 +443,85 @@ class MainViewModel(
         }
     }
 
+    fun placeWhatsAppCall(context: Context, number: String) {
+        val cleanNumber = number.ifBlank { _dialerNumber.value }
+        if (cleanNumber.isBlank()) return
+
+        ContactHelper.launchWhatsAppCall(context, cleanNumber)
+
+        // Log outgoing WhatsApp call so frequency learning & preferred calling mode work
+        viewModelScope.launch(Dispatchers.IO) {
+            val contactName = _deviceContacts.value.firstOrNull { dc ->
+                dc.phoneNumber.contains(cleanNumber) || dc.phoneNumbers.any { it.number.contains(cleanNumber) }
+            }?.name ?: favorites.value.firstOrNull { it.phoneNumber.contains(cleanNumber) }?.name
+
+            repository.insertRecentCall(
+                RecentCall(
+                    phoneNumber = cleanNumber,
+                    callerName = contactName ?: cleanNumber,
+                    callType = android.provider.CallLog.Calls.OUTGOING_TYPE,
+                    timestamp = System.currentTimeMillis(),
+                    durationSeconds = 0,
+                    callReason = "WhatsApp Call"
+                )
+            )
+        }
+    }
+
+    /**
+     * Determines whether cellular or WhatsApp calling is preferred for this contact/number,
+     * learning from the user's call history for this contact, or matching WhatsApp routing rules.
+     */
+    fun getPreferredCallingMode(phoneNumber: String): String {
+        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
+        val digits = clean.filter { it.isDigit() }.takeLast(10)
+
+        // 1. If user configured all international to WhatsApp, check international prefix (+91, etc.)
+        if (_whatsAppCallMode.value == "all_international" && ContactHelper.isInternationalNumber(clean)) {
+            return "whatsapp"
+        }
+
+        // 2. Count past WhatsApp calls vs regular cellular calls in recent calls
+        val calls = recentCalls.value.filter { call ->
+            val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            call.phoneNumber == clean || (digits.length >= 7 && callDigits == digits)
+        }
+        val waCount = calls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) == true }
+        val gsmCount = calls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) != true }
+
+        return if (waCount > gsmCount && waCount > 0) {
+            "whatsapp"
+        } else {
+            "cellular"
+        }
+    }
+
+    /**
+     * Places a call honoring the configured WhatsApp calling mode (e.g. All International -> WhatsApp,
+     * learned contact preference, or cellular).
+     */
+    fun initiateCall(context: Context, number: String, reason: String? = null) {
+        val cleanNumber = number.ifBlank { _dialerNumber.value }
+        if (cleanNumber.isBlank()) return
+
+        val isInternational = ContactHelper.isInternationalNumber(cleanNumber)
+        val mode = _whatsAppCallMode.value
+
+        if (mode == "all_international" && isInternational) {
+            placeWhatsAppCall(context, cleanNumber)
+            return
+        }
+
+        // Check learned calling preference
+        val preferred = getPreferredCallingMode(cleanNumber)
+        if (preferred == "whatsapp" && (mode == "ask_learn" || isInternational)) {
+            placeWhatsAppCall(context, cleanNumber)
+            return
+        }
+
+        placeCall(context, cleanNumber, reason)
+    }
+
     fun simulateIncomingCall(context: Context, number: String, name: String = "Incoming Caller", reason: String? = null) {
         CallManager.startSimulatedIncomingCall(context, number, name, reason)
     }
@@ -382,6 +545,18 @@ class MainViewModel(
                 reminderTime = reminderTime
             )
             repository.updateRecentCall(updated)
+        }
+    }
+
+    fun deleteRecentCall(call: RecentCall) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteRecentCall(call)
+        }
+    }
+
+    fun deleteRecentCallsForNumber(phoneNumber: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteRecentCallsForNumber(phoneNumber)
         }
     }
 
@@ -619,7 +794,12 @@ class MainViewModel(
     }
 
     fun toggleFavorite(name: String, phoneNumber: String, label: String = "Mobile", photoUri: String? = null) {
-        val existing = favorites.value.firstOrNull { it.phoneNumber == phoneNumber }
+        val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+        val existing = favorites.value.firstOrNull { fav ->
+            val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            (cleanDigits.length >= 7 && favDigits == cleanDigits) ||
+            fav.name.equals(name.trim(), ignoreCase = true)
+        }
         if (existing != null) {
             // Confirm before removing favorite or modifying Google Contacts
             _pendingCloudConfirmation.value = CloudContactConfirmation(
@@ -631,7 +811,7 @@ class MainViewModel(
                 dismissButtonText = "Cancel",
                 onConfirmCloudAction = {
                     viewModelScope.launch(Dispatchers.IO) {
-                        ContactHelper.setContactStarred(appContext, phoneNumber, false)
+                        ContactHelper.setContactStarred(appContext, existing.phoneNumber, false)
                         repository.deleteFavorite(existing)
                     }
                 },
@@ -676,7 +856,19 @@ class MainViewModel(
     }
 
     fun markAsSpam(phoneNumber: String, label: String = "Reported Spam") {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+
+            // Remove from whitelist if previously whitelisted
+            val currentWl = _notSpamWhitelist.value.toMutableSet()
+            val removedWl = currentWl.removeAll {
+                it == phoneNumber || (cleanDigits.length >= 7 && it.filter { c -> c.isDigit() }.takeLast(10) == cleanDigits)
+            }
+            if (removedWl) {
+                _notSpamWhitelist.value = currentWl
+                prefs.edit().putStringSet("not_spam_whitelist", currentWl).apply()
+            }
+
             repository.insertSpamNumber(
                 com.example.data.SpamNumber(
                     phoneNumber = phoneNumber,
@@ -685,12 +877,52 @@ class MainViewModel(
                     isBlocked = true
                 )
             )
+            repository.updateRecentCallSpamStatus(phoneNumber, true)
+            // Also update any recent calls matching normalized digits
+            val allCalls = repository.getAllRecentCallsList()
+            for (call in allCalls) {
+                val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                if (call.phoneNumber == phoneNumber || (callDigits.length >= 7 && callDigits == cleanDigits)) {
+                    if (!call.isSpam) {
+                        repository.updateRecentCall(call.copy(isSpam = true))
+                    }
+                }
+            }
         }
     }
 
     fun removeSpam(phoneNumber: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+
+            // Permanently add to not-spam whitelist
+            val currentWl = _notSpamWhitelist.value.toMutableSet()
+            currentWl.add(phoneNumber)
+            if (cleanDigits.isNotBlank()) currentWl.add(cleanDigits)
+            _notSpamWhitelist.value = currentWl
+            prefs.edit().putStringSet("not_spam_whitelist", currentWl).apply()
+
+            // Delete exact number match
             repository.deleteSpamByNumber(phoneNumber)
+            // Also delete any entries matching normalized digits
+            val allSpam = repository.getAllSpamNumbersList()
+            for (sp in allSpam) {
+                val spDigits = sp.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                if (sp.phoneNumber == phoneNumber || (spDigits.length >= 7 && spDigits == cleanDigits)) {
+                    repository.deleteSpamNumber(sp)
+                }
+            }
+            // Update recent_calls table to mark isSpam = false
+            repository.updateRecentCallSpamStatus(phoneNumber, false)
+            val allCalls = repository.getAllRecentCallsList()
+            for (call in allCalls) {
+                val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                if (call.phoneNumber == phoneNumber || (callDigits.length >= 7 && callDigits == cleanDigits)) {
+                    if (call.isSpam) {
+                        repository.updateRecentCall(call.copy(isSpam = false))
+                    }
+                }
+            }
         }
     }
 
@@ -743,6 +975,49 @@ class MainViewModel(
             }
             // Assign slot to target contact
             repository.updateFavorite(contact.copy(speedDialSlot = slot))
+        }
+    }
+
+    fun assignSpeedDialSlot(slot: Int, name: String, phoneNumber: String, photoUri: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentFavorites = repository.getAllFavoritesList()
+            // Clear this slot from any other contact
+            currentFavorites.filter { it.speedDialSlot == slot }.forEach { other ->
+                repository.updateFavorite(other.copy(speedDialSlot = null))
+            }
+
+            val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val existing = currentFavorites.firstOrNull {
+                it.phoneNumber == phoneNumber || (cleanDigits.length >= 7 && it.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) == cleanDigits) || it.name.equals(name, ignoreCase = true)
+            }
+
+            if (existing != null) {
+                repository.updateFavorite(existing.copy(speedDialSlot = slot, photoUri = photoUri ?: existing.photoUri))
+            } else {
+                val colors = listOf(0xFF2563EBL, 0xFF16A34AL, 0xFFDC2626L, 0xFFD97706L, 0xFF7C3AEDL, 0xFF0891B2L)
+                val color = colors[kotlin.math.abs(name.hashCode()) % colors.size]
+                val maxOrder = currentFavorites.maxOfOrNull { it.sortOrder } ?: -1
+                repository.insertFavorite(
+                    com.example.data.FavoriteContact(
+                        name = name.trim(),
+                        phoneNumber = phoneNumber.trim(),
+                        label = "Mobile",
+                        avatarColor = color,
+                        photoUri = photoUri,
+                        speedDialSlot = slot,
+                        sortOrder = maxOrder + 1
+                    )
+                )
+            }
+        }
+    }
+
+    fun clearSpeedDialSlot(slot: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentFavorites = repository.getAllFavoritesList()
+            currentFavorites.filter { it.speedDialSlot == slot }.forEach { fav ->
+                repository.updateFavorite(fav.copy(speedDialSlot = null))
+            }
         }
     }
 

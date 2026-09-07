@@ -52,6 +52,21 @@ interface AppDao {
     @Update
     suspend fun updateRecentCall(call: RecentCall)
 
+    @Delete
+    suspend fun deleteRecentCall(call: RecentCall)
+
+    @Query("DELETE FROM recent_calls WHERE id = :callId")
+    suspend fun deleteRecentCallById(callId: Long)
+
+    @Query("DELETE FROM recent_calls WHERE phoneNumber = :phoneNumber")
+    suspend fun deleteRecentCallsForNumber(phoneNumber: String)
+
+    @Query("SELECT * FROM recent_calls ORDER BY timestamp DESC")
+    suspend fun getAllRecentCallsList(): List<RecentCall>
+
+    @Query("UPDATE recent_calls SET isSpam = :isSpam WHERE phoneNumber = :phoneNumber")
+    suspend fun updateRecentCallSpamStatus(phoneNumber: String, isSpam: Boolean)
+
     @Query("SELECT * FROM favorite_contacts ORDER BY sortOrder ASC, id ASC")
     fun getAllFavorites(): Flow<List<FavoriteContact>>
 
@@ -72,6 +87,9 @@ interface AppDao {
 
     @Query("SELECT * FROM offline_spam_numbers ORDER BY reportCount DESC")
     fun getAllSpamNumbers(): Flow<List<SpamNumber>>
+
+    @Query("SELECT * FROM offline_spam_numbers ORDER BY reportCount DESC")
+    suspend fun getAllSpamNumbersList(): List<SpamNumber>
 
     @Query("SELECT * FROM offline_spam_numbers WHERE phoneNumber = :number LIMIT 1")
     suspend fun getSpamByNumber(number: String): SpamNumber?

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.Connection
 import android.telecom.VideoProfile
 import android.telephony.SmsManager
 import android.util.Log
@@ -82,6 +83,11 @@ object CallManager {
     var lastInsertedCallId: Long? = null
         private set
 
+    @Volatile
+    var isCallUiForegrounded: Boolean = false
+
+    private val loggedCallSessionIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     private var simulatedTimerJob: Job? = null
     private var appContext: Context? = null
 
@@ -116,6 +122,44 @@ object CallManager {
             else -> "Outgoing Call"
         }
         val photoUri = lookedUp?.photoUri
+
+        val isCarrierSpamThreat = isIncoming && isCarrierSpam(call, number, name)
+        if (isCarrierSpamThreat) {
+            Log.w(TAG, "Carrier-level spam detected for incoming call from $number. Auto-rejecting before ringing.")
+            try {
+                call.reject(Call.REJECT_REASON_DECLINED)
+            } catch (e: Exception) {
+                call.disconnect()
+            }
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val dao = AppDatabase.getInstance(context).appDao()
+                    dao.insertAutomationLog(
+                        AutomationLog(
+                            phoneNumber = number,
+                            ruleName = "Carrier Spam Filter",
+                            actionsSummary = "Auto-rejected inbound carrier-flagged spam call before ringing device",
+                            status = "BLOCKED"
+                        )
+                    )
+                    dao.insertRecentCall(
+                        RecentCall(
+                            phoneNumber = number,
+                            callerName = name.ifBlank { "Spam Threat" },
+                            callType = 3,
+                            timestamp = System.currentTimeMillis(),
+                            durationSeconds = 0,
+                            ruleMatched = "Carrier Spam Filter",
+                            isSpam = true,
+                            note = "Carrier-level spam threat auto-dropped"
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error writing carrier spam log", e)
+                }
+            }
+            return
+        }
 
         val callInfo = ActiveCallInfo(
             id = call.hashCode().toString(),
@@ -191,34 +235,55 @@ object CallManager {
         }
 
         if (callInfo != null) {
-            val duration = if (callInfo.connectTimeMillis > 0) {
-                (System.currentTimeMillis() - callInfo.connectTimeMillis) / 1000
-            } else 0L
-
-            val callType = if (callInfo.isIncoming) {
-                if (duration > 0) 1 else 3 // 1 = Incoming, 3 = Missed
-            } else 2 // Outgoing
-
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val dao = AppDatabase.getInstance(context).appDao()
-                    val insertedId = dao.insertRecentCall(
-                        RecentCall(
-                            phoneNumber = callInfo.phoneNumber,
-                            callerName = callInfo.displayName,
-                            photoUri = callInfo.photoUri,
-                            callType = callType,
-                            timestamp = System.currentTimeMillis(),
-                            durationSeconds = duration,
-                            ruleMatched = _automationState.value?.ruleName,
-                            callReason = callInfo.callReason,
-                            communityTag = callInfo.communityInfo?.category
-                        )
-                    )
-                    lastInsertedCallId = insertedId
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to log recent call", e)
+            val sessionId = callInfo.id
+            val isAlreadyLogged = synchronized(loggedCallSessionIds) {
+                if (loggedCallSessionIds.contains(sessionId)) {
+                    true
+                } else {
+                    loggedCallSessionIds.add(sessionId)
+                    false
                 }
+            }
+
+            if (!isAlreadyLogged) {
+                val duration = if (callInfo.connectTimeMillis > 0) {
+                    (System.currentTimeMillis() - callInfo.connectTimeMillis) / 1000
+                } else 0L
+
+                val callType = if (callInfo.isIncoming) {
+                    if (duration > 0) 1 else 3 // 1 = Incoming, 3 = Missed
+                } else 2 // Outgoing
+
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val dao = AppDatabase.getInstance(context).appDao()
+                        val latest = dao.getLatestRecentCallForNumber(callInfo.phoneNumber)
+                        if (latest != null && Math.abs(System.currentTimeMillis() - latest.timestamp) < 4000L) {
+                            Log.d(TAG, "Duplicate recent call write suppressed for ${callInfo.phoneNumber} within 4s window")
+                            lastInsertedCallId = latest.id
+                            return@launch
+                        }
+
+                        val insertedId = dao.insertRecentCall(
+                            RecentCall(
+                                phoneNumber = callInfo.phoneNumber,
+                                callerName = callInfo.displayName,
+                                photoUri = callInfo.photoUri,
+                                callType = callType,
+                                timestamp = System.currentTimeMillis(),
+                                durationSeconds = duration,
+                                ruleMatched = _automationState.value?.ruleName,
+                                callReason = callInfo.callReason,
+                                communityTag = callInfo.communityInfo?.category
+                            )
+                        )
+                        lastInsertedCallId = insertedId
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to log recent call", e)
+                    }
+                }
+            } else {
+                Log.d(TAG, "Call session $sessionId already recorded. Skipping duplicate insert.")
             }
         }
 
@@ -230,6 +295,51 @@ object CallManager {
         }
         _isMuted.value = false
         _isSpeakerOn.value = false
+    }
+
+    /**
+     * Carrier-Level Metadata and STIR/SHAKEN Spam Detection
+     */
+    fun isCarrierSpam(call: Call, number: String, name: String): Boolean {
+        val details = call.details
+        if (details != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (details.callerNumberVerificationStatus == Connection.VERIFICATION_STATUS_FAILED) {
+                    Log.w(TAG, "Carrier STIR/SHAKEN verification failed for $number")
+                    return true
+                }
+            }
+            val extras = details.extras
+            if (extras != null) {
+                val isSpamExtra = extras.getBoolean("android.telecom.extra.IS_SPAM", false) ||
+                    extras.getBoolean("carrier_spam_flag", false) ||
+                    extras.getBoolean("com.android.telecom.extra.IS_SPAM", false)
+                if (isSpamExtra) return true
+
+                val spamLabel = extras.getString("com.android.telecom.extra.SPAM_LABEL")
+                    ?: extras.getString("android.telecom.extra.SPAM_LABEL")
+                    ?: ""
+                if (spamLabel.contains("spam", ignoreCase = true) ||
+                    spamLabel.contains("scam", ignoreCase = true) ||
+                    spamLabel.contains("fraud", ignoreCase = true)) {
+                    return true
+                }
+            }
+            val callerDisplayName = details.callerDisplayName ?: ""
+            if (callerDisplayName.contains("Spam", ignoreCase = true) ||
+                callerDisplayName.contains("Scam", ignoreCase = true) ||
+                callerDisplayName.contains("Robocall", ignoreCase = true) ||
+                callerDisplayName.contains("Fraud", ignoreCase = true)) {
+                return true
+            }
+        }
+        if (name.contains("Spam", ignoreCase = true) ||
+            name.contains("Scam Likely", ignoreCase = true) ||
+            name.contains("Robocall", ignoreCase = true) ||
+            name.contains("Fraud", ignoreCase = true)) {
+            return true
+        }
+        return false
     }
 
     fun dismissActiveCall() {

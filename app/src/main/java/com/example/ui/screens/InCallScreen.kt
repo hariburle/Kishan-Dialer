@@ -10,6 +10,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.displayCutoutPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.background
@@ -142,6 +144,7 @@ fun InCallScreen(
     onSavePostCallNote: ((note: String?, reminderMinutes: Long?) -> Unit)? = null,
     onMarkSpam: ((String) -> Unit)? = null,
     onDismiss: () -> Unit = {},
+    onClosePostCall: () -> Unit = onDismiss,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -152,7 +155,7 @@ fun InCallScreen(
     var postCallReminderMins by remember { mutableStateOf<Long?>(null) }
     var noteSaved by remember { mutableStateOf(false) }
     var isUserInteractingWithNote by remember { mutableStateOf(false) }
-    var autoCloseRemainingSeconds by remember { mutableIntStateOf(6) }
+    var autoCloseRemainingSeconds by remember { mutableIntStateOf(3) }
     var showAudioRouteSelector by remember { mutableStateOf(false) }
 
     // AI Call Screening State
@@ -256,14 +259,14 @@ fun InCallScreen(
 
     LaunchedEffect(callInfo.state, isUserInteractingWithNote, noteSaved) {
         if (callInfo.state == Call.STATE_DISCONNECTED && !isUserInteractingWithNote && !noteSaved) {
-            autoCloseRemainingSeconds = 6
+            autoCloseRemainingSeconds = 3
             while (autoCloseRemainingSeconds > 0) {
                 delay(1000)
                 if (isUserInteractingWithNote || noteSaved) break
                 autoCloseRemainingSeconds--
             }
             if (!isUserInteractingWithNote && !noteSaved) {
-                onDismiss()
+                onClosePostCall()
             }
         }
     }
@@ -271,7 +274,7 @@ fun InCallScreen(
     LaunchedEffect(noteSaved) {
         if (noteSaved) {
             delay(1000)
-            onDismiss()
+            onClosePostCall()
         }
     }
 
@@ -314,7 +317,9 @@ fun InCallScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1123,7 +1128,7 @@ fun InCallScreen(
                                             if (postCallNote.isNotBlank()) {
                                                 onSavePostCallNote?.invoke(postCallNote, postCallReminderMins)
                                             }
-                                            onDismiss()
+                                            onClosePostCall()
                                         }
                                     ) {
                                         Text(

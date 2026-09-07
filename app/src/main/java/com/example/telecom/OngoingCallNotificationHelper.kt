@@ -16,7 +16,7 @@ import com.example.R
 
 object OngoingCallNotificationHelper {
     private const val TAG = "OngoingCallNotification"
-    const val CHANNEL_ID = "ongoing_call_channel"
+    const val CHANNEL_ID = "ongoing_call_silent_channel_v4"
     const val NOTIFICATION_ID = 9001
 
     fun createNotificationChannel(context: Context) {
@@ -24,13 +24,13 @@ object OngoingCallNotificationHelper {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Ongoing Calls",
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows active call status, elapsed call timer, and quick call actions"
+                description = "Shows active call status silently in status bar without popup"
                 setSound(null, null)
                 enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                setShowBadge(true)
+                setShowBadge(false)
             }
             val manager = context.getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
@@ -117,6 +117,7 @@ object OngoingCallNotificationHelper {
             else -> "${callInfo.phoneNumber} • $statusText"
         }
 
+        val isUiInFocus = CallManager.isCallUiForegrounded
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_call_ongoing)
             .setContentTitle(callerTitle)
@@ -124,16 +125,17 @@ object OngoingCallNotificationHelper {
             .setSubText(if (callInfo.state == Call.STATE_ACTIVE) timerFormatted else statusText)
             .setContentIntent(contentPendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (isUiInFocus) NotificationCompat.PRIORITY_MIN else NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setColor(0xFF16A34A.toInt()) // Standard active call green
-            .setColorized(true)
+            .setColorized(!isUiInFocus)
+            .setSilent(isUiInFocus)
             .setOnlyAlertOnce(true)
-            .setTicker("$callerTitle: $statusText")
+            .setTicker(if (isUiInFocus) null else "$callerTitle: $statusText")
 
         // Chronometer for native ticking live elapsed time
-        if (callInfo.state == Call.STATE_ACTIVE) {
+        if (callInfo.state == Call.STATE_ACTIVE && !isUiInFocus) {
             val connectTime = if (callInfo.connectTimeMillis > 0) callInfo.connectTimeMillis else System.currentTimeMillis()
             builder.setUsesChronometer(true)
             builder.setChronometerCountDown(false)
@@ -149,24 +151,26 @@ object OngoingCallNotificationHelper {
             .setImportant(true)
             .build()
 
-        // Modern NotificationCompat.CallStyle for Android status bar banner appearance
-        try {
-            if (callInfo.state == Call.STATE_RINGING) {
-                val callStyle = NotificationCompat.CallStyle.forIncomingCall(
-                    person,
-                    hangupPendingIntent,
-                    answerPendingIntent
-                )
-                builder.setStyle(callStyle)
-            } else {
-                val callStyle = NotificationCompat.CallStyle.forOngoingCall(
-                    person,
-                    hangupPendingIntent
-                )
-                builder.setStyle(callStyle)
+        // Modern NotificationCompat.CallStyle for Android status bar banner appearance ONLY when outside app
+        if (!isUiInFocus) {
+            try {
+                if (callInfo.state == Call.STATE_RINGING) {
+                    val callStyle = NotificationCompat.CallStyle.forIncomingCall(
+                        person,
+                        hangupPendingIntent,
+                        answerPendingIntent
+                    )
+                    builder.setStyle(callStyle)
+                } else {
+                    val callStyle = NotificationCompat.CallStyle.forOngoingCall(
+                        person,
+                        hangupPendingIntent
+                    )
+                    builder.setStyle(callStyle)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "CallStyle not applied: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "CallStyle not applied: ${e.message}")
         }
 
         if (callInfo.state == Call.STATE_RINGING) {
@@ -180,7 +184,9 @@ object OngoingCallNotificationHelper {
                 "Decline",
                 hangupPendingIntent
             )
-            builder.setFullScreenIntent(contentPendingIntent, true)
+            if (!CallManager.isCallUiForegrounded) {
+                builder.setFullScreenIntent(contentPendingIntent, true)
+            }
         } else {
             builder.addAction(
                 if (isMuted) R.drawable.ic_mic else R.drawable.ic_mic_off,
@@ -197,13 +203,19 @@ object OngoingCallNotificationHelper {
                 "Hang up",
                 hangupPendingIntent
             )
-            builder.setFullScreenIntent(contentPendingIntent, true)
+            if (!CallManager.isCallUiForegrounded) {
+                builder.setFullScreenIntent(contentPendingIntent, true)
+            }
         }
 
         return builder.build()
     }
 
     fun showCallNotification(context: Context, callInfo: ActiveCallInfo) {
+        // If the user is actively viewing the dialer app, suppress popup notification
+        if (CallManager.isCallUiForegrounded) {
+            return
+        }
         try {
             val notification = buildCallNotification(context, callInfo)
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
@@ -293,13 +305,14 @@ object OngoingCallNotificationHelper {
             else -> "Call"
         }
 
+        val isUiInFocus = CallManager.isCallUiForegrounded
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_call_ongoing)
             .setContentTitle(callerTitle)
             .setContentText(statusText)
             .setContentIntent(contentPendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (isUiInFocus) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setColor(0xFF16A34A.toInt())
@@ -308,7 +321,9 @@ object OngoingCallNotificationHelper {
         if (callInfo.state == Call.STATE_RINGING) {
             builder.addAction(R.drawable.ic_call_ongoing, "Answer", answerPendingIntent)
             builder.addAction(R.drawable.ic_call_end, "Decline", hangupPendingIntent)
-            builder.setFullScreenIntent(contentPendingIntent, true)
+            if (!isUiInFocus) {
+                builder.setFullScreenIntent(contentPendingIntent, true)
+            }
         } else {
             builder.addAction(
                 if (isMuted) R.drawable.ic_mic else R.drawable.ic_mic_off,

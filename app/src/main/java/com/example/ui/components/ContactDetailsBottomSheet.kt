@@ -57,7 +57,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import android.provider.ContactsContract
+import android.content.ContentUris
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -269,6 +272,46 @@ fun ContactDetailsBottomSheet(
                             text = contact.label,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val cId = contact.contactId
+                            val intent = if (cId != null && cId > 0) {
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    data = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, cId)
+                                }
+                            } else {
+                                Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+                                    type = ContactsContract.Contacts.CONTENT_ITEM_TYPE
+                                    putExtra(ContactsContract.Intents.Insert.NAME, contact.name)
+                                    putExtra(ContactsContract.Intents.Insert.PHONE, contact.phoneNumber)
+                                }
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Unable to open system contacts manager", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth(0.72f)
+                            .height(36.dp)
+                            .testTag("btn_edit_in_system_contacts"),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Edit in System Contacts",
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                 }
@@ -500,9 +543,7 @@ fun ContactDetailsBottomSheet(
                                         },
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp)) {
-                                            WhatsAppIcon(modifier = Modifier.size(16.dp))
-                                        }
+                                        WhatsAppIcon(modifier = Modifier.size(24.dp))
                                     }
                                 }
 
@@ -929,15 +970,7 @@ fun ContactDetailsBottomSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFF25D366),
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    WhatsAppIcon(modifier = Modifier.size(16.dp))
-                                }
-                            }
+                            WhatsAppIcon(modifier = Modifier.size(26.dp))
                             Text(text = "Call on WhatsApp", fontWeight = FontWeight.Medium)
                         }
                     }

@@ -123,6 +123,8 @@ fun FavoritesScreen(
     onIgnoreContact: (phoneNumber: String, name: String, category: String, tag: String) -> Unit = { _, _, _, _ -> },
     onUnignoreContact: (phoneNumber: String) -> Unit = {},
     onUpdateIgnoredContactTag: (phoneNumber: String, newTag: String, newName: String) -> Unit = { _, _, _ -> },
+    getPreferredCallingMode: (String) -> String = { "cellular" },
+    confirmFavoritesCall: Boolean = true,
     isFlipToShhhEnabled: Boolean = true,
     isShhhActive: Boolean = false,
     onToggleFlipToShhh: () -> Unit = {},
@@ -138,6 +140,7 @@ fun FavoritesScreen(
     var isConfigureMode by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var pendingCallConfirmation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
     var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactToCall by remember { mutableStateOf<FavoriteContact?>(null) }
@@ -614,16 +617,22 @@ fun FavoritesScreen(
                         }
 
                         itemsIndexed(favorites, key = { _, it -> it.id }) { index, contact ->
+                            val preferredMode = getPreferredCallingMode(contact.phoneNumber)
                             FavoriteGridCard(
                                 contact = contact,
                                 isCompact = isCompact,
                                 isConfigureMode = isConfigureMode,
+                                preferredCallingMode = preferredMode,
                                 canMoveUp = index > 0,
                                 canMoveDown = index < favorites.size - 1,
                                 onMoveUp = { onMoveFavorite(index, index - 1) },
                                 onMoveDown = { onMoveFavorite(index, index + 1) },
                                 onCall = {
-                                    onCallNumber(contact.phoneNumber)
+                                    if (confirmFavoritesCall) {
+                                        pendingCallConfirmation = Pair(contact.name, contact.phoneNumber)
+                                    } else {
+                                        onCallNumber(contact.phoneNumber)
+                                    }
                                 },
                                 onLongClick = {
                                     val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
@@ -717,7 +726,12 @@ fun FavoritesScreen(
                                         photoUri = popItem.photoUri,
                                         phoneNumbers = listOf(ContactPhoneNumber(popItem.phoneNumber, popItem.label))
                                     )
-                                    contactDetailsTarget = Pair(dc, null)
+                                    val matchedFav = favorites.firstOrNull { f ->
+                                        val fNum = f.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                                        val dcNum = dc.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                                        (fNum.isNotBlank() && fNum == dcNum) || f.name.equals(dc.name, ignoreCase = true)
+                                    }
+                                    contactDetailsTarget = Pair(dc, matchedFav)
                                 }
                             )
                         }
@@ -950,6 +964,46 @@ fun FavoritesScreen(
             }
         )
     }
+
+    if (pendingCallConfirmation != null) {
+        val (name, number) = pendingCallConfirmation!!
+        val preferredMode = getPreferredCallingMode(number)
+        val isWhatsApp = preferredMode == "whatsapp"
+        AlertDialog(
+            onDismissRequest = { pendingCallConfirmation = null },
+            title = { Text("Call $name?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Number: $number")
+                    Text(
+                        text = if (isWhatsApp) "Via WhatsApp Calling" else "Via Cellular Phone Call",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isWhatsApp) Color(0xFF25D366) else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val numToCall = number
+                        pendingCallConfirmation = null
+                        onCallNumber(numToCall)
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = if (isWhatsApp) Color(0xFF25D366) else Color(0xFF16A34A)
+                    )
+                ) {
+                    Text(if (isWhatsApp) "WhatsApp Call" else "Call")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCallConfirmation = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -958,6 +1012,7 @@ private fun FavoriteGridCard(
     contact: FavoriteContact,
     isCompact: Boolean,
     isConfigureMode: Boolean = false,
+    preferredCallingMode: String = "cellular",
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
     onMoveUp: () -> Unit = {},
@@ -977,7 +1032,7 @@ private fun FavoriteGridCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
-                onClick = { if (!isConfigureMode) onCall() },
+                onClick = { if (!isConfigureMode) onLongClick() },
                 onLongClick = { if (!isConfigureMode) onLongClick() }
             )
             .testTag("fav_grid_card_${contact.phoneNumber}"),
@@ -1154,26 +1209,40 @@ private fun FavoriteGridCard(
                     }
                 }
             } else {
-                // Normal Mode: Clean Call button on the right end
+                // Normal Mode: Clean Call button with dynamic learned calling mode icon
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Phone Call button
-                    FilledIconButton(
-                        onClick = onCall,
-                        modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Call ${contact.name}",
-                            modifier = Modifier.size(14.dp)
-                        )
+                    if (preferredCallingMode == "whatsapp") {
+                        FilledIconButton(
+                            onClick = onCall,
+                            modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color(0xFF25D366),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            WhatsAppIcon(
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    } else {
+                        FilledIconButton(
+                            onClick = onCall,
+                            modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color(0xFF16A34A),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = "Call ${contact.name}",
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }

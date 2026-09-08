@@ -142,6 +142,7 @@ fun FavoritesScreen(
     onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit,
     onMoveFavorite: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onReorderFavorites: (List<FavoriteContact>) -> Unit = {},
     onEditFavorite: (FavoriteContact, String?) -> Unit = { _, _ -> },
     onUpdateFavoriteNumber: (FavoriteContact, String, String) -> Unit = { _, _, _ -> },
     onIgnoreContact: (phoneNumber: String, name: String, category: String, tag: String) -> Unit = { _, _, _, _ -> },
@@ -165,8 +166,9 @@ fun FavoritesScreen(
     var isConfigureMode by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var localFavorites by remember(favorites) { mutableStateOf(favorites) }
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var draggingContactId by remember { mutableStateOf<Long?>(null) }
+    var dragStartAnchorRect by remember { mutableStateOf<Rect?>(null) }
+    var totalTouchOffset by remember { mutableStateOf(Offset.Zero) }
     val activeItemBounds = remember { mutableStateMapOf<Long, Rect>() }
     var isSearchActive by remember { mutableStateOf(false) }
     var pendingCallConfirmation by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -648,7 +650,7 @@ fun FavoritesScreen(
 
                         itemsIndexed(localFavorites, key = { _, it -> it.id }) { index, contact ->
                             val preferredMode = getPreferredCallingMode(contact.phoneNumber)
-                            val isBeingDragged = (draggingIndex == index)
+                            val isBeingDragged = (draggingContactId == contact.id)
 
                             Box(
                                 modifier = Modifier
@@ -669,47 +671,42 @@ fun FavoritesScreen(
                                         val next = localFavorites.toMutableList()
                                         Collections.swap(next, index, index - 1)
                                         localFavorites = next
-                                        onMoveFavorite(index, index - 1)
+                                        onReorderFavorites(next)
                                     },
                                     onMoveDown = {
                                         val next = localFavorites.toMutableList()
                                         Collections.swap(next, index, index + 1)
                                         localFavorites = next
-                                        onMoveFavorite(index, index + 1)
+                                        onReorderFavorites(next)
                                     },
                                     onDragStart = {
-                                        draggingIndex = index
-                                        dragOffset = Offset.Zero
+                                        draggingContactId = contact.id
+                                        dragStartAnchorRect = activeItemBounds[contact.id]
+                                        totalTouchOffset = Offset.Zero
                                     },
                                     onDragEnd = {
-                                        draggingIndex = null
-                                        dragOffset = Offset.Zero
-                                        onMoveFavorite(0, 0)
+                                        draggingContactId = null
+                                        dragStartAnchorRect = null
+                                        totalTouchOffset = Offset.Zero
+                                        onReorderFavorites(localFavorites)
                                     },
                                     onDragDelta = { delta ->
-                                        dragOffset += delta
-                                        val currentIdx = draggingIndex ?: return@FavoriteGridCard
-                                        if (currentIdx !in localFavorites.indices) return@FavoriteGridCard
-                                        val currentContact = localFavorites[currentIdx]
-                                        val currentBounds = activeItemBounds[currentContact.id] ?: return@FavoriteGridCard
-                                        val touchCenter = currentBounds.center + dragOffset
+                                        totalTouchOffset += delta
+                                        val anchor = dragStartAnchorRect ?: return@FavoriteGridCard
+                                        val touchCenter = anchor.center + totalTouchOffset
 
                                         val targetContact = localFavorites.firstOrNull { c ->
-                                            c.id != currentContact.id && activeItemBounds[c.id]?.contains(touchCenter) == true
+                                            c.id != contact.id && activeItemBounds[c.id]?.contains(touchCenter) == true
                                         }
 
                                         if (targetContact != null) {
-                                            val targetIdx = localFavorites.indexOf(targetContact)
-                                            if (targetIdx >= 0 && targetIdx != currentIdx) {
-                                                val oldBounds = activeItemBounds[currentContact.id]
-                                                val newBounds = activeItemBounds[targetContact.id]
+                                            val currentIdx = localFavorites.indexOfFirst { it.id == contact.id }
+                                            val targetIdx = localFavorites.indexOfFirst { it.id == targetContact.id }
+
+                                            if (currentIdx >= 0 && targetIdx >= 0 && currentIdx != targetIdx) {
                                                 val next = localFavorites.toMutableList()
                                                 Collections.swap(next, currentIdx, targetIdx)
                                                 localFavorites = next
-                                                draggingIndex = targetIdx
-                                                if (oldBounds != null && newBounds != null) {
-                                                    dragOffset -= (newBounds.center - oldBounds.center)
-                                                }
                                             }
                                         }
                                     },
@@ -906,22 +903,22 @@ fun FavoritesScreen(
                 }
 
                 // Floating Dragged Card Overlay (Renders ON TOP of all grid items with 0% chance of going under)
-                if (draggingIndex != null && draggingIndex!! in localFavorites.indices) {
-                    val dragContact = localFavorites[draggingIndex!!]
-                    val initialBounds = activeItemBounds[dragContact.id]
-                    if (initialBounds != null) {
+                if (draggingContactId != null && dragStartAnchorRect != null) {
+                    val dragContact = localFavorites.firstOrNull { it.id == draggingContactId }
+                    val anchor = dragStartAnchorRect!!
+                    if (dragContact != null) {
                         val density = LocalDensity.current
                         Box(
                             modifier = Modifier
                                 .zIndex(10000f)
                                 .graphicsLayer {
-                                    translationX = initialBounds.left + dragOffset.x
-                                    translationY = initialBounds.top + dragOffset.y
+                                    translationX = anchor.left + totalTouchOffset.x
+                                    translationY = anchor.top + totalTouchOffset.y
                                     scaleX = 1.08f
                                     scaleY = 1.08f
                                 }
-                                .width(with(density) { initialBounds.width.toDp() })
-                                .height(with(density) { initialBounds.height.toDp() })
+                                .width(with(density) { anchor.width.toDp() })
+                                .height(with(density) { anchor.height.toDp() })
                         ) {
                             FavoriteGridCard(
                                 contact = dragContact,

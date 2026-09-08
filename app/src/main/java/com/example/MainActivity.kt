@@ -391,6 +391,9 @@ fun MainAppContent(
                         onMoveFavorite = { fromIndex, toIndex ->
                             viewModel.moveFavorite(fromIndex, toIndex)
                         },
+                        onReorderFavorites = { newFavorites ->
+                            viewModel.reorderFavorites(newFavorites)
+                        },
                         onEditFavorite = { contact, newNickname ->
                             viewModel.updateFavorite(contact, newNickname)
                         },

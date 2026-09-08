@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 data class ActiveCallInfo(
     val id: String,
@@ -123,7 +124,8 @@ object CallManager {
         }
         val photoUri = lookedUp?.photoUri
 
-        val isCarrierSpamThreat = isIncoming && isCarrierSpam(call, number, name)
+        val isWhitelisted = isWhitelistedOrRuleMatched(context, number)
+        val isCarrierSpamThreat = isIncoming && !isWhitelisted && isCarrierSpam(call, number, name)
         if (isCarrierSpamThreat) {
             Log.w(TAG, "Carrier-level spam detected for incoming call from $number. Auto-rejecting before ringing.")
             try {
@@ -343,6 +345,41 @@ object CallManager {
             name.contains("Robocall", ignoreCase = true) ||
             name.contains("Fraud", ignoreCase = true)) {
             return true
+        }
+        return false
+    }
+
+    private fun isWhitelistedOrRuleMatched(context: Context, number: String): Boolean {
+        val normNum = number.filter { it.isDigit() }.takeLast(10)
+        if (normNum.isBlank()) return false
+        try {
+            val dao = AppDatabase.getInstance(context).appDao()
+            val rules = runBlocking { dao.getEnabledRules() }
+            val ruleMatched = rules.any { rule ->
+                rule.isEnabled && matchesRulePattern(rule.phoneNumberPattern, number)
+            }
+            if (ruleMatched) {
+                Log.d(TAG, "Number $number matched user automation rule. Whitelisted from carrier spam filter.")
+                return true
+            }
+
+            val favs = runBlocking { dao.getAllFavoritesList() }
+            val isFav = favs.any { f ->
+                val fNorm = f.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                fNorm.isNotBlank() && fNorm == normNum
+            }
+            if (isFav) {
+                Log.d(TAG, "Number $number is in Starred Favorites. Whitelisted from carrier spam filter.")
+                return true
+            }
+
+            val contact = ContactHelper.lookupContactByNumber(context, number)
+            if (contact != null) {
+                Log.d(TAG, "Number $number found in saved contacts. Whitelisted from carrier spam filter.")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking whitelist for $number", e)
         }
         return false
     }

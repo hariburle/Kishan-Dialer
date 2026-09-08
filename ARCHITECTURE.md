@@ -92,9 +92,10 @@ Evaluate Automation Rules (CallManager.kt)
 2. **Keypad UX**: Added Quick Recents bar, Pause/Wait overflow menu, long-press `,` / `;` T9 subtext, and long-press Backspace clear.
 3. **In-Call Screen Keyboard Overlap**: Automatically hides soft keyboard when call connects (`LocalSoftwareKeyboardController.current?.hide()`).
 4. **Recents Panel Crash Fix**: Resolved duplicate key exceptions in `LazyColumn` by generating unique composite keys for merged system/local call logs.
-5. **Favorites Drag-and-Drop Reordering**:
-   - Re-architected to local working state (`localFavorites`) hit-tested against `activeItemBounds[contact.id]`.
-   - Continuous multi-row drag-and-drop across any number of rows.
-   - Top-layer `Box` overlay (`zIndex = 10000f`) preventing cards from ever drawing under adjacent cards.
-   - Direct positional swapping (`Collections.swap`) so moving `(3, 2)` to `(2, 2)` moves the displaced card straight down to `(3, 2)`.
-   - Layout persisted to `SharedPreferences` and Room DB upon release.
+6. **Gate Buzzer & User Rule/Contact Whitelisting over Carrier Spam Filter**:
+   - `CallManager.isWhitelistedOrRuleMatched` checks if an incoming number matches an active Automation Rule (e.g. Gate / Intercom Buzzer), Starred Favorites, or Saved Contacts BEFORE applying carrier STIR/SHAKEN or carrier spam checks.
+   - Prevents legitimate gate buzzers or user contacts from being wrongly auto-rejected or flagged as carrier spam threats.
+
+7. **Directional Grid Reordering Controls**:
+   - In Configure Mode, every card provides explicit directional arrow buttons (`▲` Up Row, `▼` Down Row, `◄` Left Column, `►` Right Column).
+   - Each directional button is dynamically enabled **only if there is space to move in that direction** (e.g., `▲` is enabled only if `index >= 2` in a 2-column grid).

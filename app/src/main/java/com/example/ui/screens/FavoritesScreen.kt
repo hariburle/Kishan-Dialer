@@ -49,6 +49,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -665,15 +667,29 @@ fun FavoritesScreen(
                                     isCompact = isCompact,
                                     isConfigureMode = isConfigureMode,
                                     preferredCallingMode = preferredMode,
-                                    canMoveUp = index > 0,
-                                    canMoveDown = index < localFavorites.size - 1,
-                                    onMoveUp = {
+                                    canMoveUpRow = index >= 2,
+                                    canMoveDownRow = index + 2 < localFavorites.size,
+                                    canMoveLeftCol = index > 0,
+                                    canMoveRightCol = index < localFavorites.size - 1,
+                                    onMoveUpRow = {
+                                        val next = localFavorites.toMutableList()
+                                        Collections.swap(next, index, index - 2)
+                                        localFavorites = next
+                                        onReorderFavorites(next)
+                                    },
+                                    onMoveDownRow = {
+                                        val next = localFavorites.toMutableList()
+                                        Collections.swap(next, index, index + 2)
+                                        localFavorites = next
+                                        onReorderFavorites(next)
+                                    },
+                                    onMoveLeftCol = {
                                         val next = localFavorites.toMutableList()
                                         Collections.swap(next, index, index - 1)
                                         localFavorites = next
                                         onReorderFavorites(next)
                                     },
-                                    onMoveDown = {
+                                    onMoveRightCol = {
                                         val next = localFavorites.toMutableList()
                                         Collections.swap(next, index, index + 1)
                                         localFavorites = next
@@ -1131,10 +1147,14 @@ private fun FavoriteGridCard(
     isConfigureMode: Boolean = false,
     isFloatingOverlay: Boolean = false,
     preferredCallingMode: String = "cellular",
-    canMoveUp: Boolean = false,
-    canMoveDown: Boolean = false,
-    onMoveUp: () -> Unit = {},
-    onMoveDown: () -> Unit = {},
+    canMoveUpRow: Boolean = false,
+    canMoveDownRow: Boolean = false,
+    canMoveLeftCol: Boolean = false,
+    canMoveRightCol: Boolean = false,
+    onMoveUpRow: () -> Unit = {},
+    onMoveDownRow: () -> Unit = {},
+    onMoveLeftCol: () -> Unit = {},
+    onMoveRightCol: () -> Unit = {},
     onDragStart: () -> Unit = {},
     onDragEnd: () -> Unit = {},
     onDragDelta: (Offset) -> Unit = {},
@@ -1286,30 +1306,57 @@ private fun FavoriteGridCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Reorder controls
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Reorder Directional Controls: Up, Down, Left, Right
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
                         IconButton(
-                            onClick = onMoveUp,
-                            enabled = canMoveUp,
-                            modifier = Modifier.size(24.dp).testTag("fav_move_prev_${contact.id}")
+                            onClick = onMoveUpRow,
+                            enabled = canMoveUpRow,
+                            modifier = Modifier.size(22.dp).testTag("fav_move_up_${contact.id}")
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                contentDescription = "Move Left",
-                                tint = if (canMoveUp) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(16.dp)
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Move Up Row",
+                                tint = if (canMoveUpRow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                         IconButton(
-                            onClick = onMoveDown,
-                            enabled = canMoveDown,
-                            modifier = Modifier.size(24.dp).testTag("fav_move_next_${contact.id}")
+                            onClick = onMoveDownRow,
+                            enabled = canMoveDownRow,
+                            modifier = Modifier.size(22.dp).testTag("fav_move_down_${contact.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Move Down Row",
+                                tint = if (canMoveDownRow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onMoveLeftCol,
+                            enabled = canMoveLeftCol,
+                            modifier = Modifier.size(22.dp).testTag("fav_move_left_${contact.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = "Move Left Column",
+                                tint = if (canMoveLeftCol) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onMoveRightCol,
+                            enabled = canMoveRightCol,
+                            modifier = Modifier.size(22.dp).testTag("fav_move_right_${contact.id}")
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "Move Right",
-                                tint = if (canMoveDown) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(16.dp)
+                                contentDescription = "Move Right Column",
+                                tint = if (canMoveRightCol) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }

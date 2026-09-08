@@ -193,23 +193,148 @@ object ContactHelper {
         }
     }
 
+    // Standard country ISO to international calling code mapping
+    private val countryCallingCodes = mapOf(
+        "us" to "1", "ca" to "1", "in" to "91", "gb" to "44", "uk" to "44",
+        "au" to "61", "de" to "49", "fr" to "33", "it" to "39", "es" to "34",
+        "mx" to "52", "br" to "55", "ru" to "7", "jp" to "81", "cn" to "86",
+        "kr" to "82", "sg" to "65", "ae" to "971", "sa" to "966", "pk" to "92",
+        "bd" to "880", "np" to "977", "lk" to "94", "my" to "60", "id" to "62",
+        "ph" to "63", "nz" to "64", "za" to "27", "nl" to "31", "se" to "46",
+        "no" to "47", "dk" to "45", "ch" to "41", "at" to "43", "ie" to "353",
+        "il" to "972", "eg" to "20", "ng" to "234", "ke" to "254", "th" to "66",
+        "vn" to "84", "tr" to "90", "gr" to "30", "pt" to "351", "pl" to "48",
+        "hk" to "852", "tw" to "886", "ar" to "54", "co" to "57", "cl" to "56"
+    )
+
     /**
-     * Checks if a phone number is an international number (e.g. +91, other non-+1 prefixes, 00 or 011 prefixes).
+     * Determines current country ISO of device based on cellular network, SIM card, or locale.
      */
-    fun isInternationalNumber(phoneNumber: String): Boolean {
-        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
-        if (clean.isBlank()) return false
-        if (clean.startsWith("+91") || clean.startsWith("0091") || clean.startsWith("01191")) return true
-        if (clean.startsWith("+") && !clean.startsWith("+1")) return true
-        if (clean.startsWith("011") || clean.startsWith("00")) return true
-        return false
+    fun getDeviceCountryIso(context: Context?): String {
+        if (context != null) {
+            try {
+                val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                val networkCountry = tm?.networkCountryIso?.trim()?.lowercase()
+                if (!networkCountry.isNullOrBlank()) return networkCountry
+
+                val simCountry = tm?.simCountryIso?.trim()?.lowercase()
+                if (!simCountry.isNullOrBlank()) return simCountry
+            } catch (_: Exception) {}
+        }
+        try {
+            val localeCountry = java.util.Locale.getDefault().country.trim().lowercase()
+            if (localeCountry.isNotBlank()) return localeCountry
+        } catch (_: Exception) {}
+        return "us"
     }
 
     /**
-     * Checks if a phone number matches international WhatsApp routing rules (e.g. +91 prefix or international format).
+     * Retrieves calling code (e.g. "91" for India, "1" for USA) for given country ISO.
+     */
+    fun getCountryCallingCode(countryIso: String): String {
+        return countryCallingCodes[countryIso.lowercase().trim()] ?: "1"
+    }
+
+    /**
+     * Intelligently checks if a phone number is international relative to the device's physical location:
+     * - If physically in India (calling code 91), a +91 number is NOT international.
+     * - If physically in USA (calling code 1), a +91 number IS international, but a +1 number is NOT.
+     * - Any number dialed without international prefix (+, 00, 011) is treated as a domestic/local call.
+     */
+    fun isInternationalNumber(context: Context?, phoneNumber: String): Boolean {
+        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
+        if (clean.isBlank()) return false
+
+        val hasPlus = clean.startsWith("+")
+        val has00Exit = clean.startsWith("00")
+        val has011Exit = clean.startsWith("011")
+
+        // If no international prefix was dialed, this is a local/domestic call
+        if (!hasPlus && !has00Exit && !has011Exit) {
+            return false
+        }
+
+        val deviceCountryIso = getDeviceCountryIso(context)
+        val deviceCallingCode = getCountryCallingCode(deviceCountryIso)
+
+        val digitsAfterPrefix = when {
+            hasPlus -> clean.removePrefix("+")
+            has011Exit -> clean.removePrefix("011")
+            has00Exit -> clean.removePrefix("00")
+            else -> clean
+        }
+
+        // If the number's country code matches the current device location, it is domestic
+        if (digitsAfterPrefix.startsWith(deviceCallingCode)) {
+            return false
+        }
+
+        // Otherwise, it targets a foreign country calling code
+        return true
+    }
+
+    fun isInternationalNumber(phoneNumber: String): Boolean {
+        return isInternationalNumber(null, phoneNumber)
+    }
+
+    /**
+     * Checks if a phone number matches international WhatsApp routing rules.
      */
     fun shouldSuggestWhatsApp(phoneNumber: String): Boolean {
-        return isInternationalNumber(phoneNumber)
+        return isInternationalNumber(null, phoneNumber)
+    }
+
+    fun shouldSuggestWhatsApp(context: Context?, phoneNumber: String): Boolean {
+        return isInternationalNumber(context, phoneNumber)
+    }
+
+    /**
+     * Strips leading international calling code or trunk zero to extract core local digits.
+     */
+    fun normalizeToLocalDigits(phoneNumber: String): String {
+        val clean = phoneNumber.filter { it.isDigit() }
+        if (clean.isBlank()) return ""
+
+        for ((_, code) in countryCallingCodes) {
+            if (clean.startsWith(code) && clean.length > code.length + 5) {
+                return clean.substring(code.length)
+            }
+        }
+        if (clean.startsWith("0") && clean.length > 8) {
+            return clean.substring(1)
+        }
+        return clean
+    }
+
+    /**
+     * Matches a contact phone number against a user search query, allowing searches without
+     * international dial codes (+91, +1, etc.) to match contacts saved with international dial codes.
+     */
+    fun matchesNumberQuery(contactNumber: String, searchQuery: String): Boolean {
+        if (searchQuery.isBlank()) return true
+        val queryTrimmed = searchQuery.trim()
+        val queryDigits = queryTrimmed.filter { it.isDigit() }
+        val contactDigits = contactNumber.filter { it.isDigit() }
+
+        if (queryDigits.isNotEmpty()) {
+            // Direct digit substring match (e.g. "98765" in "919876543210")
+            if (contactDigits.contains(queryDigits)) return true
+
+            // Local digits match (stripped of international code)
+            val contactLocal = normalizeToLocalDigits(contactNumber)
+            if (contactLocal.contains(queryDigits)) return true
+
+            val queryLocal = normalizeToLocalDigits(searchQuery)
+            if (queryLocal.isNotEmpty() && contactDigits.contains(queryLocal)) return true
+            if (queryLocal.isNotEmpty() && contactLocal.contains(queryLocal)) return true
+
+            // Last 10-digit suffix match (standard mobile phone numbers)
+            if (contactDigits.length >= 10 && queryDigits.length >= 7) {
+                if (contactDigits.takeLast(10).contains(queryDigits.takeLast(10))) return true
+            }
+        }
+
+        return contactNumber.contains(queryTrimmed, ignoreCase = true)
     }
 
     /**

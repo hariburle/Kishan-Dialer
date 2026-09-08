@@ -203,15 +203,33 @@ fun ContactDetailsBottomSheet(
                         )
                     }
 
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        IconButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("contact_details_star_toggle")
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                                tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -249,13 +267,26 @@ fun ContactDetailsBottomSheet(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(
-                        text = contact.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = contact.name,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (isFavorite) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = "Favorite Contact",
+                                tint = Color(0xFFF59E0B),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
 
                     if (!contact.nickname.isNullOrBlank()) {
                         Text(
@@ -396,9 +427,12 @@ fun ContactDetailsBottomSheet(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     contact.phoneNumbers.forEachIndexed { index, pn ->
-                        val normPn = pn.number.replace(Regex("[^0-9+]"), "")
-                        val normDef = currentDefaultNumber.replace(Regex("[^0-9+]"), "")
-                        val isDefault = (normDef.isNotBlank() && normPn == normDef) || (contact.phoneNumbers.size == 1)
+                        val normPn = pn.number.filter { it.isDigit() }.takeLast(10)
+                        val favDigits = favoriteContact?.phoneNumber?.filter { it.isDigit() }?.takeLast(10) ?: ""
+                        val isThisNumberFavorite = isFavorite && (
+                            (favDigits.length >= 7 && normPn == favDigits) ||
+                            (contact.phoneNumbers.size == 1)
+                        )
 
                         Row(
                             modifier = Modifier
@@ -421,7 +455,7 @@ fun ContactDetailsBottomSheet(
                                     }
                                 )
                                 .background(
-                                    if (isDefault) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                    if (isThisNumberFavorite) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                                     else Color.Transparent
                                 )
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -440,7 +474,7 @@ fun ContactDetailsBottomSheet(
                                         color = MaterialTheme.colorScheme.primary
                                     )
 
-                                    if (isDefault) {
+                                    if (isThisNumberFavorite) {
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),
                                             color = Color(0xFFF59E0B),
@@ -457,7 +491,7 @@ fun ContactDetailsBottomSheet(
                                                     modifier = Modifier.size(10.dp)
                                                 )
                                                 Text(
-                                                    text = "DEFAULT",
+                                                    text = if (contact.phoneNumbers.size > 1) "DEFAULT" else "FAVORITE",
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.ExtraBold
                                                 )
@@ -485,22 +519,23 @@ fun ContactDetailsBottomSheet(
                                 // 1. Star / Favorite toggle button
                                 IconButton(
                                     onClick = {
-                                        if (isDefault && contact.phoneNumbers.size > 1 && favoriteContact != null) {
-                                            currentDefaultNumber = ""
-                                            onClearDefaultNumber()
-                                            Toast.makeText(context, "Default number cleared", Toast.LENGTH_SHORT).show()
+                                        if (isThisNumberFavorite) {
+                                            onToggleFavorite()
+                                            Toast.makeText(context, "Removed from Favorites", Toast.LENGTH_SHORT).show()
                                         } else {
                                             currentDefaultNumber = pn.number
                                             onSetAsDefaultNumber(pn.number, pn.label)
-                                            Toast.makeText(context, "★ Set as default: ${pn.number}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "★ Added to Favorites", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    modifier = Modifier.size(34.dp)
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .testTag("star_toggle_${pn.number}")
                                 ) {
                                     Icon(
-                                        imageVector = if (isDefault) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = "Favorite",
-                                        tint = if (isDefault) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        imageVector = if (isThisNumberFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = if (isThisNumberFavorite) "Remove Favorite" else "Add Favorite",
+                                        tint = if (isThisNumberFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -813,9 +848,9 @@ fun ContactDetailsBottomSheet(
     // Long-press Action Dialog for a selected phone number (Android Dialer Style)
     if (numberForActionMenu != null) {
         val selectedPn = numberForActionMenu!!
-        val normSel = selectedPn.number.replace(Regex("[^0-9+]"), "")
-        val normDef = currentDefaultNumber.replace(Regex("[^0-9+]"), "")
-        val isCurrentDefault = normDef.isNotBlank() && normSel == normDef
+        val normSel = selectedPn.number.filter { it.isDigit() }.takeLast(10)
+        val favDigits = favoriteContact?.phoneNumber?.filter { it.isDigit() }?.takeLast(10) ?: ""
+        val isCurrentDefault = isFavorite && ((favDigits.length >= 7 && normSel == favDigits) || (contact.phoneNumbers.size == 1))
 
         AlertDialog(
             onDismissRequest = { numberForActionMenu = null },

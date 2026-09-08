@@ -125,7 +125,7 @@ fun ContactPickerDialog(
 
     val filteredContacts = combinedList.filter {
         it.name.contains(searchQuery, ignoreCase = true) ||
-        it.phoneNumber.contains(searchQuery, ignoreCase = true)
+        ContactHelper.matchesNumberQuery(it.phoneNumber, searchQuery)
     }
 
     AlertDialog(

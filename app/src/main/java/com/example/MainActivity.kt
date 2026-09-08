@@ -25,13 +25,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Contacts
@@ -46,6 +49,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -78,6 +82,7 @@ import kotlinx.coroutines.delay
 import com.example.telecom.CallManager
 import com.example.telecom.RoleHelper
 import com.example.ui.MainViewModel
+import com.example.ui.components.WhatsAppIcon
 import com.example.ui.screens.CallLogScreen
 import com.example.ui.screens.ContactsScreen
 import com.example.ui.screens.DialerScreen
@@ -225,12 +230,14 @@ fun MainAppContent(
     val activeSims by viewModel.activeSims.collectAsStateWithLifecycle()
     val deviceContacts by viewModel.deviceContacts.collectAsStateWithLifecycle()
     val pendingCloudConfirmation by viewModel.pendingCloudConfirmation.collectAsStateWithLifecycle()
+    val pendingCallMethodChoice by viewModel.pendingCallMethodChoice.collectAsStateWithLifecycle()
 
     val isFlipToShhhEnabled by viewModel.isFlipToShhhEnabled.collectAsStateWithLifecycle()
     val isShhhActive by viewModel.isShhhActive.collectAsStateWithLifecycle()
     val isCallScreenMinimized by viewModel.isCallScreenMinimized.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val whatsAppCallMode by viewModel.whatsAppCallMode.collectAsStateWithLifecycle()
+    val learnedCallModes by viewModel.learnedCallModes.collectAsStateWithLifecycle()
     val defaultStartTab by viewModel.defaultStartTab.collectAsStateWithLifecycle()
     val confirmFavoritesCall by viewModel.confirmFavoritesCall.collectAsStateWithLifecycle()
 
@@ -354,6 +361,9 @@ fun MainAppContent(
                         onCallNumber = { num ->
                             viewModel.initiateCall(context, num)
                         },
+                        onCallWhatsApp = { num ->
+                            viewModel.placeWhatsAppCall(context, num)
+                        },
                         onCreateRule = { num ->
                             ruleNumberToCreate = num
                             selectedTab = 4
@@ -471,6 +481,9 @@ fun MainAppContent(
                         onToggleFavorite = { name, num, label, photoUri ->
                             viewModel.toggleFavorite(name, num, label, photoUri)
                         },
+                        onDeleteFavorite = { fav ->
+                            viewModel.deleteFavorite(fav)
+                        },
                         onAddFavorite = { name, num, label, photoUri ->
                             viewModel.addFavorite(name, num, label, photoUri)
                         },
@@ -499,6 +512,7 @@ fun MainAppContent(
                         whatsAppCallMode = whatsAppCallMode,
                         onSetWhatsAppCallMode = { viewModel.setWhatsAppCallMode(it) },
                         onResetWhatsAppChoices = { viewModel.resetWhatsAppChoices() },
+                        learnedChoicesCount = learnedCallModes.size,
                         spamNumbers = spamNumbers,
                         onRemoveSpam = { viewModel.removeSpam(it) },
                         confirmFavoritesCall = confirmFavoritesCall,
@@ -619,6 +633,93 @@ fun MainAppContent(
                         ) {
                             Text(conf.dismissButtonText)
                         }
+                    }
+                }
+            )
+        }
+
+        // WhatsApp vs Cellular Call Choice Dialog (Ask Always & Ask and Learn)
+        pendingCallMethodChoice?.let { prompt ->
+            var rememberChoice by remember(prompt) { mutableStateOf(prompt.isLearnMode) }
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissCallMethodChoice() },
+                title = {
+                    Text(
+                        text = "Choose Calling Method",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column {
+                            if (!prompt.contactName.isNullOrBlank()) {
+                                Text(
+                                    text = prompt.contactName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = prompt.number,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.chooseCallMethod(context, "cellular", rememberChoice)
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                            ) {
+                                Icon(imageVector = Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Cellular")
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.chooseCallMethod(context, "whatsapp", rememberChoice)
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+                            ) {
+                                WhatsAppIcon(modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("WhatsApp", color = Color.White)
+                            }
+                        }
+
+                        if (prompt.isLearnMode) {
+                            Row(
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                modifier = Modifier.clickable { rememberChoice = !rememberChoice }
+                            ) {
+                                Checkbox(
+                                    checked = rememberChoice,
+                                    onCheckedChange = { rememberChoice = it }
+                                )
+                                Text(
+                                    text = "Remember choice for this contact",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissCallMethodChoice() }) {
+                        Text("Cancel")
                     }
                 }
             )

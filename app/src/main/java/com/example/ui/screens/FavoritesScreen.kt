@@ -113,6 +113,7 @@ fun FavoritesScreen(
     ignoredContacts: List<IgnoredContact> = emptyList(),
     onSelectNumber: (String) -> Unit,
     onCallNumber: (String) -> Unit,
+    onCallWhatsApp: (String) -> Unit = {},
     onCreateRule: (String) -> Unit,
     onDeleteFavorite: (FavoriteContact) -> Unit,
     onAddFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit,
@@ -301,8 +302,9 @@ fun FavoritesScreen(
             val filteredContacts = remember(searchQuery, deviceContacts, favorites) {
                 deviceContacts.filter { dc ->
                     dc.name.lowercase().contains(queryClean) ||
-                    dc.phoneNumber.contains(queryClean) ||
-                    dc.phoneNumbers.any { it.number.contains(queryClean) }
+                    (dc.nickname != null && dc.nickname.lowercase().contains(queryClean)) ||
+                    ContactHelper.matchesNumberQuery(dc.phoneNumber, searchQuery) ||
+                    dc.phoneNumbers.any { ContactHelper.matchesNumberQuery(it.number, searchQuery) }
                 }
             }
 
@@ -436,7 +438,7 @@ fun FavoritesScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             FilledIconButton(
-                                                onClick = { ContactHelper.launchWhatsAppCall(context, pn.number) },
+                                                onClick = { onCallWhatsApp(pn.number) },
                                                 modifier = Modifier.size(34.dp),
                                                 colors = IconButtonDefaults.filledIconButtonColors(
                                                     containerColor = Color(0xFF25D366),
@@ -596,7 +598,7 @@ fun FavoritesScreen(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Text(
-                                        text = "FAVORITES",
+                                        text = "Favorites",
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface

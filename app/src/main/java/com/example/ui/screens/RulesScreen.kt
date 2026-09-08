@@ -87,6 +87,7 @@ fun RulesScreen(
     whatsAppCallMode: String = "ask_learn",
     onSetWhatsAppCallMode: (String) -> Unit = {},
     onResetWhatsAppChoices: () -> Unit = {},
+    learnedChoicesCount: Int = 0,
     spamNumbers: List<SpamNumber> = emptyList(),
     onRemoveSpam: (String) -> Unit = {},
     confirmFavoritesCall: Boolean = false,
@@ -251,17 +252,17 @@ fun RulesScreen(
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(text = "WhatsApp Call Integration Mode", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                             val options = listOf(
-                                "all_international" to "All International Numbers",
-                                "ask_learn" to "Ask & Learn",
-                                "ask_always" to "Ask Always",
-                                "never" to "Never"
+                                Triple("ask_learn", "Ask & Learn", "Prompts once per contact and memorizes choice"),
+                                Triple("ask_always", "Ask Always", "Always shows Cellular vs WhatsApp choice on call"),
+                                Triple("all_international", "All International Numbers", "Directs international (+91, etc.) numbers to WhatsApp"),
+                                Triple("never", "Never", "Default standard cellular calls only")
                             )
-                            options.forEach { (mode, label) ->
+                            options.forEach { (mode, label, desc) ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { onSetWhatsAppCallMode(mode) }
-                                        .padding(vertical = 2.dp),
+                                        .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
@@ -270,10 +271,22 @@ fun RulesScreen(
                                         onClick = { onSetWhatsAppCallMode(mode) },
                                         modifier = Modifier.size(36.dp)
                                     )
-                                    Text(text = label, style = MaterialTheme.typography.bodySmall)
+                                    Column {
+                                        Text(text = label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                        Text(text = desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            if (whatsAppCallMode == "ask_learn") {
+                                Text(
+                                    text = "$learnedChoicesCount contact choice(s) remembered",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
                             OutlinedButton(
                                 onClick = onResetWhatsAppChoices,
                                 modifier = Modifier.fillMaxWidth()

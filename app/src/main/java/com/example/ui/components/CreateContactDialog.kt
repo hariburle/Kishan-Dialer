@@ -183,7 +183,7 @@ fun CreateContactDialog(
                         onCheckedChange = { addToFavorites = it }
                     )
                     Text(
-                        text = "Also add to Favorites panel",
+                        text = "Add to Favorites",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

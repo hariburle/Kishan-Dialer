@@ -118,13 +118,28 @@ fun ContactsScreen(
     val filteredContacts = remember(effectiveContacts, searchQuery, sourceFilter) {
         var list = effectiveContacts
 
+        // Source Filter: All, App Only, or Google / Device
+        when (sourceFilter) {
+            ContactSourceFilter.ALL -> {}
+            ContactSourceFilter.APP_ONLY -> {
+                list = list.filter { it.isAppOnly }
+            }
+            ContactSourceFilter.DEVICE -> {
+                list = list.filter { !it.isAppOnly }
+            }
+        }
+
         if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim().lowercase()
+            val q = searchQuery.trim()
+            val qLower = q.lowercase()
             list = list.filter {
-                it.name.lowercase().contains(q) ||
-                it.phoneNumber.contains(q) ||
-                (it.nickname != null && it.nickname.lowercase().contains(q)) ||
-                it.phoneNumbers.any { pn -> pn.number.contains(q) || pn.label.lowercase().contains(q) }
+                it.name.lowercase().contains(qLower) ||
+                (it.nickname != null && it.nickname.lowercase().contains(qLower)) ||
+                ContactHelper.matchesNumberQuery(it.phoneNumber, q) ||
+                it.phoneNumbers.any { pn ->
+                    ContactHelper.matchesNumberQuery(pn.number, q) ||
+                    pn.label.lowercase().contains(qLower)
+                }
             }
         }
         list
@@ -249,9 +264,9 @@ fun ContactsScreen(
             FilterChip(
                 selected = sourceFilter == ContactSourceFilter.ALL,
                 onClick = { sourceFilter = ContactSourceFilter.ALL },
-                label = { Text("All (${deviceContacts.size})", fontSize = 12.sp) }
+                label = { Text("All (${effectiveContacts.size})", fontSize = 12.sp) }
             )
-            val appOnlyCount = deviceContacts.count { it.isAppOnly }
+            val appOnlyCount = effectiveContacts.count { it.isAppOnly }
             FilterChip(
                 selected = sourceFilter == ContactSourceFilter.APP_ONLY,
                 onClick = { sourceFilter = ContactSourceFilter.APP_ONLY },
@@ -261,7 +276,7 @@ fun ContactsScreen(
                     selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             )
-            val deviceCount = deviceContacts.count { !it.isAppOnly }
+            val deviceCount = effectiveContacts.count { !it.isAppOnly }
             FilterChip(
                 selected = sourceFilter == ContactSourceFilter.DEVICE,
                 onClick = { sourceFilter = ContactSourceFilter.DEVICE },
@@ -637,11 +652,14 @@ fun ContactsScreen(
     if (contactForDetailsSheet != null) {
         val detailContact = contactForDetailsSheet!!
         val matchedFav = favorites.firstOrNull { fav ->
-            val normF = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
-            detailContact.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normF } ||
-            detailContact.phoneNumber.replace(Regex("[^0-9+]"), "") == normF ||
-            fav.name.equals(detailContact.name, ignoreCase = true) ||
-            (!detailContact.nickname.isNullOrBlank() && fav.name.equals(detailContact.nickname, ignoreCase = true))
+            val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val phoneMatch = if (favDigits.length >= 7) {
+                detailContact.phoneNumbers.any { it.number.filter { c -> c.isDigit() }.takeLast(10) == favDigits } ||
+                detailContact.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) == favDigits
+            } else false
+            phoneMatch ||
+            fav.name.equals(detailContact.name.trim(), ignoreCase = true) ||
+            (!detailContact.nickname.isNullOrBlank() && fav.name.equals(detailContact.nickname!!.trim(), ignoreCase = true))
         }
         val isFav = matchedFav != null
 
@@ -658,10 +676,14 @@ fun ContactsScreen(
                 contactForDetailsSheet = null
             },
             onToggleFavorite = {
-                val favName = detailContact.nickname?.ifBlank { null } ?: detailContact.name
-                val defNum = matchedFav?.phoneNumber ?: detailContact.phoneNumber
-                val defLabel = matchedFav?.label ?: detailContact.label
-                onToggleFavorite(favName, defNum, defLabel, detailContact.photoUri)
+                if (matchedFav != null) {
+                    onDeleteFavorite(matchedFav)
+                } else {
+                    val favName = detailContact.nickname?.ifBlank { null } ?: detailContact.name
+                    val defNum = detailContact.phoneNumber.ifBlank { detailContact.phoneNumbers.firstOrNull()?.number ?: "" }
+                    val defLabel = detailContact.label.ifBlank { detailContact.phoneNumbers.firstOrNull()?.label ?: "Mobile" }
+                    onAddFavorite(favName, defNum, defLabel, detailContact.photoUri)
+                }
             },
             onSetAsDefaultNumber = { num, label ->
                 if (matchedFav != null) {
@@ -728,7 +750,7 @@ private fun ContactRowItem(
     val matchedNumber = remember(searchQuery, contact) {
         if (searchQuery.isNotBlank() && searchQuery.any { it.isDigit() }) {
             val q = searchQuery.trim()
-            contact.phoneNumbers.firstOrNull { it.number.contains(q) }?.number ?: if (contact.phoneNumber.contains(q)) contact.phoneNumber else null
+            contact.phoneNumbers.firstOrNull { ContactHelper.matchesNumberQuery(it.number, q) }?.number ?: if (ContactHelper.matchesNumberQuery(contact.phoneNumber, q)) contact.phoneNumber else null
         } else null
     }
 

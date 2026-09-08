@@ -45,6 +45,13 @@ data class CloudContactConfirmation(
     val onDismissOrCancel: () -> Unit = {}
 )
 
+data class CallMethodChoicePrompt(
+    val number: String,
+    val contactName: String?,
+    val reason: String? = null,
+    val isLearnMode: Boolean = false
+)
+
 class MainViewModel(
     private val repository: AppRepository,
     private val appContext: Context
@@ -61,7 +68,7 @@ class MainViewModel(
         prefs.edit().putString("theme_mode", mode).apply()
     }
 
-    private val _whatsAppCallMode = MutableStateFlow(prefs.getString("whatsapp_call_mode", "never") ?: "never")
+    private val _whatsAppCallMode = MutableStateFlow(prefs.getString("whatsapp_call_mode", "ask_learn") ?: "ask_learn")
     val whatsAppCallMode: StateFlow<String> = _whatsAppCallMode.asStateFlow()
 
     fun setWhatsAppCallMode(mode: String) {
@@ -69,9 +76,61 @@ class MainViewModel(
         prefs.edit().putString("whatsapp_call_mode", mode).apply()
     }
 
+    // Learned Calling Choices for Contacts (Map of normalized number -> "cellular" | "whatsapp")
+    private val _learnedCallModes = MutableStateFlow<Map<String, String>>(loadLearnedCallModes())
+    val learnedCallModes: StateFlow<Map<String, String>> = _learnedCallModes.asStateFlow()
+
+    private fun loadLearnedCallModes(): Map<String, String> {
+        val rawSet = prefs.getStringSet("whatsapp_learned_choices", emptySet()) ?: emptySet()
+        val map = mutableMapOf<String, String>()
+        rawSet.forEach { entry ->
+            val parts = entry.split(":")
+            if (parts.size == 2) {
+                map[parts[0]] = parts[1]
+            }
+        }
+        return map
+    }
+
+    fun saveLearnedCallMode(phoneNumber: String, mode: String) {
+        val digits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
+        if (digits.isBlank() && clean.isBlank()) return
+        val current = _learnedCallModes.value.toMutableMap()
+        if (digits.isNotBlank()) current[digits] = mode
+        if (clean.isNotBlank()) current[clean] = mode
+        _learnedCallModes.value = current
+
+        val set = current.map { "${it.key}:${it.value}" }.toSet()
+        prefs.edit().putStringSet("whatsapp_learned_choices", HashSet(set)).apply()
+    }
+
     fun resetWhatsAppChoices() {
-        _whatsAppCallMode.value = "never"
-        prefs.edit().remove("whatsapp_call_mode").remove("whatsapp_learned_choices").apply()
+        _learnedCallModes.value = emptyMap()
+        prefs.edit().remove("whatsapp_learned_choices").apply()
+    }
+
+    // Call method selection dialog state
+    private val _pendingCallMethodChoice = MutableStateFlow<CallMethodChoicePrompt?>(null)
+    val pendingCallMethodChoice: StateFlow<CallMethodChoicePrompt?> = _pendingCallMethodChoice.asStateFlow()
+
+    fun dismissCallMethodChoice() {
+        _pendingCallMethodChoice.value = null
+    }
+
+    fun chooseCallMethod(context: Context, method: String, remember: Boolean) {
+        val prompt = _pendingCallMethodChoice.value ?: return
+        _pendingCallMethodChoice.value = null
+
+        if (remember || _whatsAppCallMode.value == "ask_learn") {
+            saveLearnedCallMode(prompt.number, method)
+        }
+
+        if (method == "whatsapp") {
+            placeWhatsAppCall(context, prompt.number)
+        } else {
+            placeCall(context, prompt.number, prompt.reason)
+        }
     }
 
     // Explicit Not-Spam Whitelist (numbers explicitly unmarked as spam)
@@ -391,6 +450,11 @@ class MainViewModel(
         val effectiveReason = reason ?: _selectedCallReason.value
         maximizeCall()
 
+        // If in ask_learn mode and user explicitly triggered cellular call, learn the choice directly
+        if (_whatsAppCallMode.value == "ask_learn") {
+            saveLearnedCallMode(cleanNumber, "cellular")
+        }
+
         try {
             val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
             val uri = Uri.fromParts("tel", cleanNumber, null)
@@ -447,6 +511,11 @@ class MainViewModel(
         val cleanNumber = number.ifBlank { _dialerNumber.value }
         if (cleanNumber.isBlank()) return
 
+        // If in ask_learn mode and user explicitly triggered WhatsApp call, learn the choice directly
+        if (_whatsAppCallMode.value == "ask_learn") {
+            saveLearnedCallMode(cleanNumber, "whatsapp")
+        }
+
         ContactHelper.launchWhatsAppCall(context, cleanNumber)
 
         // Log outgoing WhatsApp call so frequency learning & preferred calling mode work
@@ -470,18 +539,23 @@ class MainViewModel(
 
     /**
      * Determines whether cellular or WhatsApp calling is preferred for this contact/number,
-     * learning from the user's call history for this contact, or matching WhatsApp routing rules.
+     * checking explicitly learned choices, international rules, or recent call history.
      */
     fun getPreferredCallingMode(phoneNumber: String): String {
         val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
         val digits = clean.filter { it.isDigit() }.takeLast(10)
 
-        // 1. If user configured all international to WhatsApp, check international prefix (+91, etc.)
-        if (_whatsAppCallMode.value == "all_international" && ContactHelper.isInternationalNumber(clean)) {
+        // 1. Check explicitly learned choice
+        val learned = _learnedCallModes.value[clean]
+            ?: if (digits.isNotBlank()) _learnedCallModes.value[digits] else null
+        if (learned != null) return learned
+
+        // 2. If user configured all international to WhatsApp, check international based on phone location
+        if (_whatsAppCallMode.value == "all_international" && ContactHelper.isInternationalNumber(appContext, clean)) {
             return "whatsapp"
         }
 
-        // 2. Count past WhatsApp calls vs regular cellular calls in recent calls
+        // 3. Count past WhatsApp calls vs regular cellular calls in recent calls
         val calls = recentCalls.value.filter { call ->
             val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
             call.phoneNumber == clean || (digits.length >= 7 && callDigits == digits)
@@ -496,29 +570,73 @@ class MainViewModel(
         }
     }
 
+    fun lookupContactByNumber(phoneNumber: String): DeviceContact? {
+        val fav = favorites.value.firstOrNull {
+            ContactHelper.matchesNumberQuery(it.phoneNumber, phoneNumber)
+        }
+        if (fav != null) return DeviceContact(fav.name, fav.phoneNumber, fav.label, fav.photoUri)
+        return deviceContacts.value.firstOrNull { dc ->
+            ContactHelper.matchesNumberQuery(dc.phoneNumber, phoneNumber) ||
+            dc.phoneNumbers.any { ContactHelper.matchesNumberQuery(it.number, phoneNumber) }
+        }
+    }
+
     /**
-     * Places a call honoring the configured WhatsApp calling mode (e.g. All International -> WhatsApp,
-     * learned contact preference, or cellular).
+     * Places a call honoring the configured WhatsApp calling mode (All International,
+     * Ask Always prompt, Ask & Learn memory, or cellular).
      */
     fun initiateCall(context: Context, number: String, reason: String? = null) {
         val cleanNumber = number.ifBlank { _dialerNumber.value }
         if (cleanNumber.isBlank()) return
 
-        val isInternational = ContactHelper.isInternationalNumber(cleanNumber)
+        val isInternational = ContactHelper.isInternationalNumber(context, cleanNumber)
         val mode = _whatsAppCallMode.value
 
+        // 1. All International Mode
         if (mode == "all_international" && isInternational) {
             placeWhatsAppCall(context, cleanNumber)
             return
         }
 
-        // Check learned calling preference
-        val preferred = getPreferredCallingMode(cleanNumber)
-        if (preferred == "whatsapp" && (mode == "ask_learn" || isInternational)) {
-            placeWhatsAppCall(context, cleanNumber)
+        // 2. Ask Always Mode
+        if (mode == "ask_always") {
+            val contact = lookupContactByNumber(cleanNumber)
+            _pendingCallMethodChoice.value = CallMethodChoicePrompt(
+                number = cleanNumber,
+                contactName = contact?.name,
+                reason = reason,
+                isLearnMode = false
+            )
             return
         }
 
+        // 3. Ask & Learn Mode
+        if (mode == "ask_learn") {
+            val clean = cleanNumber.replace(Regex("[^0-9+]"), "")
+            val digits = cleanNumber.filter { it.isDigit() }.takeLast(10)
+            val learnedChoice = _learnedCallModes.value[clean]
+                ?: if (digits.isNotBlank()) _learnedCallModes.value[digits] else null
+            if (learnedChoice != null) {
+                if (learnedChoice == "whatsapp") {
+                    placeWhatsAppCall(context, cleanNumber)
+                } else {
+                    placeCall(context, cleanNumber, reason)
+                }
+                return
+            }
+
+            // Not yet learned: show prompt so user can choose and learn
+            val contact = lookupContactByNumber(cleanNumber)
+            _pendingCallMethodChoice.value = CallMethodChoicePrompt(
+                number = cleanNumber,
+                contactName = contact?.name,
+                reason = reason,
+                isLearnMode = true
+            )
+            return
+        }
+
+        // 4. Default / Never
         placeCall(context, cleanNumber, reason)
     }
 

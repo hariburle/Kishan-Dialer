@@ -67,9 +67,9 @@ object T9Helper {
                 }
             }
 
-            // 2. Check if phone number matches digits directly
-            val cleanPhone = contact.phoneNumber.filter { it.isDigit() }
-            val matchedPhone = cleanPhone.contains(cleanQuery)
+            // 2. Check if phone number matches digits directly (supporting saved numbers with +91, +1, etc.)
+            val matchedPhone = ContactHelper.matchesNumberQuery(contact.phoneNumber, cleanQuery) ||
+                contact.phoneNumbers.any { ContactHelper.matchesNumberQuery(it.number, cleanQuery) }
 
             if (matchedName) {
                 results.add(
@@ -83,10 +83,16 @@ object T9Helper {
                     )
                 )
             } else if (matchedPhone) {
+                // Determine matching phone number
+                val matchedNumber = if (ContactHelper.matchesNumberQuery(contact.phoneNumber, cleanQuery)) {
+                    contact.phoneNumber
+                } else {
+                    contact.phoneNumbers.firstOrNull { ContactHelper.matchesNumberQuery(it.number, cleanQuery) }?.number ?: contact.phoneNumber
+                }
                 results.add(
                     T9SearchResult(
                         name = contact.name,
-                        phoneNumber = contact.phoneNumber,
+                        phoneNumber = matchedNumber,
                         label = contact.label,
                         photoUri = contact.photoUri,
                         matchedByName = false,

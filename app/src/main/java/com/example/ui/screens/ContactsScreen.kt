@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -370,7 +373,7 @@ fun ContactsScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Sort,
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onSecondaryContainer
@@ -993,74 +996,83 @@ private fun ContactRowItem(
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                // SMS
-                                IconButton(
-                                    onClick = { onSmsClick(pn.number) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Message,
-                                        contentDescription = "SMS",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-
-                                // Phone Call
-                                IconButton(
-                                    onClick = { onCallDirect(pn.number) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Call,
-                                        contentDescription = "Phone Call",
-                                        tint = Color(0xFF16A34A),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-
-                                // WhatsApp Message (Mobile only)
-                                if (isMobile) {
-                                    IconButton(
-                                        onClick = {
-                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
-                                        },
-                                        modifier = Modifier.size(34.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Chat,
-                                            contentDescription = "WhatsApp Message",
-                                            tint = Color(0xFF25D366),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-
-                                    // WhatsApp Audio Call (Mobile only)
-                                    IconButton(
-                                        onClick = {
-                                            onPlaceWhatsAppCall(pn.number)
-                                        },
-                                        modifier = Modifier.size(34.dp)
-                                    ) {
-                                        WhatsAppIcon(modifier = Modifier.size(22.dp))
-                                    }
-                                }
-
-                                // Copy
+                                // 1. Copy Number (Far Left)
                                 IconButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(pn.number))
+                                        Toast.makeText(context, "Copied ${pn.number}", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        contentDescription = "Copy Number",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                         modifier = Modifier.size(16.dp)
                                     )
+                                }
+
+                                if (isMobile) {
+                                    // 2. WhatsApp Chat (2nd from Left)
+                                    IconButton(
+                                        onClick = {
+                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Chat,
+                                            contentDescription = "WhatsApp Chat",
+                                            tint = Color(0xFF25D366),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    // 3. WhatsApp Call (Middle)
+                                    IconButton(
+                                        onClick = {
+                                            onPlaceWhatsAppCall(pn.number)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        WhatsAppIcon(modifier = Modifier.size(20.dp))
+                                    }
+                                }
+
+                                // 4. SMS Message (2nd from Right)
+                                IconButton(
+                                    onClick = { onSmsClick(pn.number) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Message,
+                                        contentDescription = "SMS Text",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                // 5. Phone Call (Far Right - Closest to thumb resting position!)
+                                IconButton(
+                                    onClick = { onCallDirect(pn.number) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFF16A34A).copy(alpha = 0.15f),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Call,
+                                                contentDescription = "Phone Call",
+                                                tint = Color(0xFF16A34A),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

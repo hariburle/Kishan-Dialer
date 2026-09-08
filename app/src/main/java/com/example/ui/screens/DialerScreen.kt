@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
 import android.content.Context
+import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.delay
@@ -104,7 +108,7 @@ private fun QuickRecentsSection(
             .padding(horizontal = 16.dp, vertical = 2.dp)
     ) {
         Text(
-            text = "QUICK RECENTS",
+            text = "Recent",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -165,6 +169,7 @@ private fun QuickRecentsSection(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DialerScreen(
     number: String,
@@ -435,7 +440,7 @@ fun DialerScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "T9 MATCHES (${t9Matches.size})",
+                                        text = "T9 Matches (${t9Matches.size})",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
@@ -602,13 +607,25 @@ fun DialerScreen(
                         )
                     }
 
-                    // Backspace button
-                    IconButton(
-                        onClick = onDeleteDigit,
-                        enabled = number.isNotEmpty(),
+                    // Backspace button with click to delete single digit & long-press to clear entire field
+                    val view = LocalView.current
+                    Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .testTag("dialer_backspace_button")
+                            .clip(CircleShape)
+                            .then(
+                                if (number.isNotEmpty()) {
+                                    Modifier.combinedClickable(
+                                        onClick = onDeleteDigit,
+                                        onLongClick = {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            onClearDigits()
+                                        }
+                                    )
+                                } else Modifier
+                            )
+                            .testTag("dialer_backspace_button"),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Backspace,

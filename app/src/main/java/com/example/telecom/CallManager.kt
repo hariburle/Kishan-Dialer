@@ -127,8 +127,13 @@ object CallManager {
         if (isCarrierSpamThreat) {
             Log.w(TAG, "Carrier-level spam detected for incoming call from $number. Auto-rejecting before ringing.")
             try {
-                call.reject(Call.REJECT_REASON_DECLINED)
-            } catch (e: Exception) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    call.reject(Call.REJECT_REASON_DECLINED)
+                } else {
+                    @Suppress("DEPRECATION")
+                    call.reject(false, null)
+                }
+            } catch (_: Exception) {
                 call.disconnect()
             }
             scope.launch(Dispatchers.IO) {
@@ -367,21 +372,37 @@ object CallManager {
      * If rule matches: executes automated workflow.
      * If NO rule matches: leaves manual control to user.
      */
+    private fun matchesRulePattern(rawNumber: String, pattern: String): Boolean {
+        val cleanPattern = pattern.trim()
+        if (cleanPattern == "*") return true
+        fun normDigits(s: String) = s.filter { it.isDigit() }.takeLast(10)
+        val normTarget = normDigits(rawNumber)
+        val normPat = normDigits(cleanPattern)
+        if (normPat.isNotBlank() && normTarget.isNotBlank()) {
+            return normTarget == normPat || normTarget.endsWith(normPat) || normPat.endsWith(normTarget)
+        }
+        return rawNumber.contains(cleanPattern, ignoreCase = true)
+    }
+
     fun checkAndExecuteAutomation(context: Context, rawNumber: String, isIncoming: Boolean) {
         if (!isIncoming) return
 
         automationJob?.cancel()
         automationJob = scope.launch(Dispatchers.IO) {
             val dao = AppDatabase.getInstance(context).appDao()
-            val normalizedTarget = normalizePhoneNumber(rawNumber)
 
-            // Check if caller is in offline spam blocklist (True Silence / Auto-Block)
+            // 1. Evaluate user-configured automation rules FIRST (user rules take top priority)
+            val rules = dao.getEnabledRules()
+            val matchedRule = rules.firstOrNull { rule -> matchesRulePattern(rawNumber, rule.phoneNumberPattern) }
+
+            if (matchedRule != null) {
+                Log.d(TAG, "Matched automation rule '${matchedRule.name}' for caller $rawNumber")
+                executeAutomationWorkflow(context, matchedRule, rawNumber)
+                return@launch
+            }
+
+            // 2. Only if no automation rule matched, check offline spam blocklist
             val spamEntry = dao.getSpamByNumber(rawNumber)
-                ?: dao.getAllSpamNumbers()
-                    .let { flow ->
-                        // Quick check against loaded spam
-                        null
-                    }
             if (spamEntry != null && spamEntry.isBlocked) {
                 Log.d(TAG, "Spam number detected ($rawNumber). Auto-blocking call.")
                 _automationState.value = AutomationStep(
@@ -393,20 +414,8 @@ object CallManager {
                 return@launch
             }
 
-            val rules = dao.getEnabledRules()
-
-            val matchedRule = rules.firstOrNull { rule ->
-                val normRule = normalizePhoneNumber(rule.phoneNumberPattern)
-                normRule.isNotEmpty() && (normalizedTarget.contains(normRule) || normRule.contains(normalizedTarget) || rule.phoneNumberPattern == "*")
-            }
-
-            if (matchedRule != null) {
-                Log.d(TAG, "Matched automation rule: ${matchedRule.name}")
-                executeAutomationWorkflow(context, matchedRule, rawNumber)
-            } else {
-                Log.d(TAG, "No automation rule matched for caller $rawNumber. Showing standard in-call UI.")
-                _automationState.value = null
-            }
+            Log.d(TAG, "No automation rule matched for caller $rawNumber. Showing standard in-call UI.")
+            _automationState.value = null
         }
     }
 

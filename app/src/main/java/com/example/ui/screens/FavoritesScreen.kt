@@ -24,23 +24,42 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import com.example.ui.components.WhatsAppIcon
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
@@ -48,7 +67,6 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -68,6 +86,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,6 +117,7 @@ import com.example.ui.components.MultiNumberCallDialog
 import com.example.util.ContactHelper
 import com.example.util.ContactPhoneNumber
 import com.example.util.DeviceContact
+import java.util.Collections
 
 data class PopularContactItem(
     val name: String,
@@ -144,6 +164,10 @@ fun FavoritesScreen(
     var editTargetIgnored by remember { mutableStateOf<IgnoredContact?>(null) }
     var isConfigureMode by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var localFavorites by remember(favorites) { mutableStateOf(favorites) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val activeItemBounds = remember { mutableStateMapOf<Long, Rect>() }
     var isSearchActive by remember { mutableStateOf(false) }
     var pendingCallConfirmation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
@@ -450,7 +474,7 @@ fun FavoritesScreen(
                                                 )
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.Chat,
+                                                    imageVector = Icons.AutoMirrored.Filled.Chat,
                                                     contentDescription = "WhatsApp ${pn.number}",
                                                     tint = Color.White,
                                                     modifier = Modifier.size(16.dp)
@@ -622,45 +646,102 @@ fun FavoritesScreen(
                             }
                         }
 
-                        itemsIndexed(favorites, key = { _, it -> it.id }) { index, contact ->
+                        itemsIndexed(localFavorites, key = { _, it -> it.id }) { index, contact ->
                             val preferredMode = getPreferredCallingMode(contact.phoneNumber)
-                            FavoriteGridCard(
-                                contact = contact,
-                                isCompact = isCompact,
-                                isConfigureMode = isConfigureMode,
-                                preferredCallingMode = preferredMode,
-                                canMoveUp = index > 0,
-                                canMoveDown = index < favorites.size - 1,
-                                onMoveUp = { onMoveFavorite(index, index - 1) },
-                                onMoveDown = { onMoveFavorite(index, index + 1) },
-                                onCall = {
-                                    if (confirmFavoritesCall) {
-                                        pendingCallConfirmation = Pair(contact.name, contact.phoneNumber)
-                                    } else {
-                                        onCallNumber(contact.phoneNumber)
+                            val isBeingDragged = (draggingIndex == index)
+
+                            Box(
+                                modifier = Modifier
+                                    .animateItem()
+                                    .onGloballyPositioned { coords ->
+                                        activeItemBounds[contact.id] = coords.boundsInParent()
                                     }
-                                },
-                                onLongClick = {
-                                    val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
-                                    val matched = deviceContacts.firstOrNull { dc ->
-                                        dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
-                                        dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
-                                        dc.name.equals(contact.name, ignoreCase = true)
-                                    } ?: DeviceContact(
-                                        name = contact.name,
-                                        phoneNumber = contact.phoneNumber,
-                                        label = contact.label,
-                                        photoUri = contact.photoUri,
-                                        phoneNumbers = listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
-                                    )
-                                    contactDetailsTarget = Pair(matched, contact)
-                                },
-                                onSelect = { onSelectNumber(contact.phoneNumber) },
-                                onCreateRule = { onCreateRule(contact.phoneNumber) },
-                                onEdit = { editTargetContact = contact },
-                                onDelete = { onDeleteFavorite(contact) },
-                                onSpeedDialClick = { speedDialTargetContact = contact }
-                            )
+                                    .alpha(if (isBeingDragged) 0.15f else 1.0f)
+                            ) {
+                                FavoriteGridCard(
+                                    contact = contact,
+                                    isCompact = isCompact,
+                                    isConfigureMode = isConfigureMode,
+                                    preferredCallingMode = preferredMode,
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < localFavorites.size - 1,
+                                    onMoveUp = {
+                                        val next = localFavorites.toMutableList()
+                                        Collections.swap(next, index, index - 1)
+                                        localFavorites = next
+                                        onMoveFavorite(index, index - 1)
+                                    },
+                                    onMoveDown = {
+                                        val next = localFavorites.toMutableList()
+                                        Collections.swap(next, index, index + 1)
+                                        localFavorites = next
+                                        onMoveFavorite(index, index + 1)
+                                    },
+                                    onDragStart = {
+                                        draggingIndex = index
+                                        dragOffset = Offset.Zero
+                                    },
+                                    onDragEnd = {
+                                        draggingIndex = null
+                                        dragOffset = Offset.Zero
+                                        onMoveFavorite(0, 0)
+                                    },
+                                    onDragDelta = { delta ->
+                                        dragOffset += delta
+                                        val currentIdx = draggingIndex ?: return@FavoriteGridCard
+                                        if (currentIdx !in localFavorites.indices) return@FavoriteGridCard
+                                        val currentContact = localFavorites[currentIdx]
+                                        val currentBounds = activeItemBounds[currentContact.id] ?: return@FavoriteGridCard
+                                        val touchCenter = currentBounds.center + dragOffset
+
+                                        val targetContact = localFavorites.firstOrNull { c ->
+                                            c.id != currentContact.id && activeItemBounds[c.id]?.contains(touchCenter) == true
+                                        }
+
+                                        if (targetContact != null) {
+                                            val targetIdx = localFavorites.indexOf(targetContact)
+                                            if (targetIdx >= 0 && targetIdx != currentIdx) {
+                                                val oldBounds = activeItemBounds[currentContact.id]
+                                                val newBounds = activeItemBounds[targetContact.id]
+                                                val next = localFavorites.toMutableList()
+                                                Collections.swap(next, currentIdx, targetIdx)
+                                                localFavorites = next
+                                                draggingIndex = targetIdx
+                                                if (oldBounds != null && newBounds != null) {
+                                                    dragOffset -= (newBounds.center - oldBounds.center)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onCall = {
+                                        if (confirmFavoritesCall) {
+                                            pendingCallConfirmation = Pair(contact.name, contact.phoneNumber)
+                                        } else {
+                                            onCallNumber(contact.phoneNumber)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                        val matched = deviceContacts.firstOrNull { dc ->
+                                            dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                            dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum ||
+                                            dc.name.equals(contact.name, ignoreCase = true)
+                                        } ?: DeviceContact(
+                                            name = contact.name,
+                                            phoneNumber = contact.phoneNumber,
+                                            label = contact.label,
+                                            photoUri = contact.photoUri,
+                                            phoneNumbers = listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
+                                        )
+                                        contactDetailsTarget = Pair(matched, contact)
+                                    },
+                                    onSelect = { onSelectNumber(contact.phoneNumber) },
+                                    onCreateRule = { onCreateRule(contact.phoneNumber) },
+                                    onEdit = { editTargetContact = contact },
+                                    onDelete = { onDeleteFavorite(contact) },
+                                    onSpeedDialClick = { speedDialTargetContact = contact }
+                                )
+                            }
                         }
                     }
 
@@ -681,7 +762,7 @@ fun FavoritesScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.TrendingUp,
+                                        imageVector = Icons.AutoMirrored.Filled.TrendingUp,
                                         contentDescription = null,
                                         tint = Color(0xFFEA580C),
                                         modifier = Modifier.size(20.dp)
@@ -820,6 +901,40 @@ fun FavoritesScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Floating Dragged Card Overlay (Renders ON TOP of all grid items with 0% chance of going under)
+                if (draggingIndex != null && draggingIndex!! in localFavorites.indices) {
+                    val dragContact = localFavorites[draggingIndex!!]
+                    val initialBounds = activeItemBounds[dragContact.id]
+                    if (initialBounds != null) {
+                        val density = LocalDensity.current
+                        Box(
+                            modifier = Modifier
+                                .zIndex(10000f)
+                                .graphicsLayer {
+                                    translationX = initialBounds.left + dragOffset.x
+                                    translationY = initialBounds.top + dragOffset.y
+                                    scaleX = 1.08f
+                                    scaleY = 1.08f
+                                }
+                                .width(with(density) { initialBounds.width.toDp() })
+                                .height(with(density) { initialBounds.height.toDp() })
+                        ) {
+                            FavoriteGridCard(
+                                contact = dragContact,
+                                isCompact = isCompact,
+                                isConfigureMode = true,
+                                isFloatingOverlay = true,
+                                preferredCallingMode = getPreferredCallingMode(dragContact.phoneNumber),
+                                onCall = {},
+                                onSelect = {},
+                                onCreateRule = {},
+                                onDelete = {},
+                                onSpeedDialClick = {}
+                            )
                         }
                     }
                 }
@@ -1017,34 +1132,66 @@ private fun FavoriteGridCard(
     contact: FavoriteContact,
     isCompact: Boolean,
     isConfigureMode: Boolean = false,
+    isFloatingOverlay: Boolean = false,
     preferredCallingMode: String = "cellular",
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
     onMoveUp: () -> Unit = {},
     onMoveDown: () -> Unit = {},
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
+    onDragDelta: (Offset) -> Unit = {},
     onCall: () -> Unit,
     onLongClick: () -> Unit = {},
     onSelect: () -> Unit,
     onCreateRule: () -> Unit,
     onEdit: () -> Unit = {},
     onDelete: () -> Unit,
-    onSpeedDialClick: () -> Unit
+    onSpeedDialClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    val shadowElevation by animateDpAsState(
+        targetValue = if (isFloatingOverlay) 16.dp else 2.dp,
+        label = "drag_shadow"
+    )
+
+    val cardModifier = if (isConfigureMode && !isFloatingOverlay) {
+        modifier
+            .fillMaxWidth()
+            .pointerInput(isConfigureMode) {
+                detectDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDragDelta(dragAmount)
+                    }
+                )
+            }
+    } else if (!isConfigureMode) {
+        modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { onLongClick() },
+                onLongClick = { onLongClick() }
+            )
+    } else {
+        modifier.fillMaxWidth()
+    }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = { if (!isConfigureMode) onLongClick() },
-                onLongClick = { if (!isConfigureMode) onLongClick() }
-            )
-            .testTag("fav_grid_card_${contact.phoneNumber}"),
+        modifier = cardModifier.testTag("fav_grid_card_${contact.phoneNumber}"),
         colors = CardDefaults.cardColors(
-            containerColor = if (isConfigureMode) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = if (isFloatingOverlay) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
+            } else if (isConfigureMode) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            }
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = shadowElevation),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
@@ -1150,7 +1297,7 @@ private fun FavoriteGridCard(
                             modifier = Modifier.size(24.dp).testTag("fav_move_prev_${contact.id}")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.KeyboardArrowLeft,
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                 contentDescription = "Move Left",
                                 tint = if (canMoveUp) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                                 modifier = Modifier.size(16.dp)
@@ -1162,7 +1309,7 @@ private fun FavoriteGridCard(
                             modifier = Modifier.size(24.dp).testTag("fav_move_next_${contact.id}")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.KeyboardArrowRight,
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "Move Right",
                                 tint = if (canMoveDown) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                                 modifier = Modifier.size(16.dp)

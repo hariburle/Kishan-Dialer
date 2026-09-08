@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Block
@@ -148,7 +150,14 @@ fun InCallScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(callInfo.id) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
     var callSeconds by remember { mutableLongStateOf(0L) }
     var enteredDtmfHistory by remember { mutableStateOf("") }
     var postCallNote by remember { mutableStateOf("") }
@@ -181,12 +190,11 @@ fun InCallScreen(
             isCallerTranscribing = true
             delay(1800)
 
-            val isSpamNumber = (callInfo.communityInfo?.spamScore ?: 0) > 40 ||
+            val isSpamNumber = (callInfo.communityInfo?.spamScore ?: 0) > 50 ||
                 callInfo.displayName.contains("Spam", ignoreCase = true) ||
                 callInfo.displayName.contains("Telemarket", ignoreCase = true) ||
-                callInfo.displayName.contains("Credit", ignoreCase = true) ||
-                callInfo.displayName.contains("Unknown", ignoreCase = true) ||
-                callInfo.phoneNumber.contains("800")
+                callInfo.displayName.contains("Scam", ignoreCase = true) ||
+                callInfo.displayName.contains("Robocall", ignoreCase = true)
 
             if (isSpamNumber) {
                 screeningMessages = screeningMessages + ScreeningMessage(

@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Collections
 import kotlin.math.abs
 
 data class CloudContactConfirmation(
@@ -277,6 +278,10 @@ class MainViewModel(
                 refreshRecentCalls()
             }
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            removeSpam("+1 469-731-3343")
+            removeSpam("4697313343")
+        }
     }
 
     fun refreshRecentCalls() {
@@ -450,23 +455,45 @@ class MainViewModel(
                 val colors = listOf(0xFF2563EBL, 0xFF16A34AL, 0xFFDC2626L, 0xFFD97706L, 0xFF7C3AEDL, 0xFF0891B2L)
                 var maxOrder = activeDbFavorites.maxOfOrNull { it.sortOrder } ?: -1
 
+                // Read saved sort orders from SharedPreferences to persist custom order across reinstalls
+                val savedSortOrdersRaw = prefs.getStringSet("favorite_sort_orders", emptySet()) ?: emptySet()
+                val savedSortMap = mutableMapOf<String, Int>()
+                savedSortOrdersRaw.forEach { entry ->
+                    val parts = entry.split(":")
+                    if (parts.size >= 2) {
+                        val key = parts[0]
+                        val order = parts[1].toIntOrNull()
+                        if (key.isNotBlank() && order != null) {
+                            savedSortMap[key] = order
+                            if (parts.size >= 3 && parts[2].isNotBlank()) {
+                                savedSortMap[parts[2]] = order
+                            }
+                        }
+                    }
+                }
+
                 // Merge starred device contacts without duplicating the contact
                 for (deviceContact in starredOnDevice) {
                     val nameKey = normName(deviceContact.name)
+                    val devDigits = normDigits(deviceContact.phoneNumber)
+                    val savedOrder = savedSortMap[devDigits] ?: savedSortMap[nameKey]
+
                     val existing = activeByName[nameKey] ?: activeByName.values.firstOrNull {
                         val d1 = normDigits(it.phoneNumber)
-                        val d2 = normDigits(deviceContact.phoneNumber)
-                        d1.length >= 7 && d1 == d2
+                        d1.length >= 7 && d1 == devDigits
                     }
 
                     if (existing != null) {
-                        // Keep the user's chosen favorite phoneNumber intact; only update display name or photo
+                        // Keep user's chosen favorite phoneNumber intact; update display name, photo, or restore saved sort order
+                        val newSortOrder = savedOrder ?: existing.sortOrder
                         if (existing.name != deviceContact.name ||
-                            existing.photoUri != deviceContact.photoUri) {
+                            existing.photoUri != deviceContact.photoUri ||
+                            existing.sortOrder != newSortOrder) {
                             val updated = existing.copy(
                                 name = deviceContact.name,
                                 nickname = deviceContact.nickname ?: existing.nickname,
-                                photoUri = deviceContact.photoUri ?: existing.photoUri
+                                photoUri = deviceContact.photoUri ?: existing.photoUri,
+                                sortOrder = newSortOrder
                             )
                             repository.updateFavorite(updated)
                             activeByName[nameKey] = updated
@@ -474,6 +501,7 @@ class MainViewModel(
                     } else {
                         // Genuinely new contact
                         maxOrder++
+                        val targetOrder = savedOrder ?: maxOrder
                         val color = colors[kotlin.math.abs(deviceContact.name.hashCode()) % colors.size]
                         val newFav = FavoriteContact(
                             name = deviceContact.name,
@@ -482,7 +510,7 @@ class MainViewModel(
                             label = deviceContact.label,
                             avatarColor = color,
                             photoUri = deviceContact.photoUri,
-                            sortOrder = maxOrder
+                            sortOrder = targetOrder
                         )
                         val insertedId = repository.insertFavorite(newFav)
                         activeByName[nameKey] = newFav.copy(id = insertedId)
@@ -1068,18 +1096,22 @@ class MainViewModel(
 
     fun reorderFavorites(newOrderedList: List<com.example.data.FavoriteContact>) {
         viewModelScope.launch(Dispatchers.IO) {
+            fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
             val updated = newOrderedList.mapIndexed { index, item ->
                 item.copy(sortOrder = index)
             }
             repository.updateFavorites(updated)
+
+            // Save custom sort orders into SharedPreferences for persistence across reinstalls
+            val sortOrderSet = updated.map { "${normDigits(it.phoneNumber)}:${it.sortOrder}:${it.name.trim().lowercase()}" }.toSet()
+            prefs.edit().putStringSet("favorite_sort_orders", sortOrderSet).apply()
         }
     }
 
     fun moveFavorite(fromIndex: Int, toIndex: Int) {
         val current = favorites.value.toMutableList()
         if (fromIndex in current.indices && toIndex in current.indices && fromIndex != toIndex) {
-            val item = current.removeAt(fromIndex)
-            current.add(toIndex, item)
+            Collections.swap(current, fromIndex, toIndex)
             reorderFavorites(current)
         }
     }

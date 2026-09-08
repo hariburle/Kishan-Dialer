@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.telecom.Call
 import android.util.Log
 import android.util.Rational
 import androidx.activity.ComponentActivity
@@ -20,7 +21,13 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import com.example.telecom.ActiveCallInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +40,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
@@ -582,6 +590,25 @@ fun MainAppContent(
             }
         }
 
+        // Floating Green In-Call Progress Pill (Appears when user minimizes in-call screen or navigates app during active call)
+        AnimatedVisibility(
+            visible = activeCall != null &&
+                    activeCall?.state != Call.STATE_DISCONNECTED &&
+                    activeCall?.state != Call.STATE_DISCONNECTING &&
+                    isCallScreenMinimized,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            activeCall?.let { call ->
+                FloatingCallPill(
+                    callInfo = call,
+                    onMaximize = { viewModel.maximizeCall() },
+                    onDisconnect = { viewModel.disconnectCall() }
+                )
+            }
+        }
+
         // Explicit Confirmation Dialog before making any changes to Google Account Contacts in the Cloud
         pendingCloudConfirmation?.let { conf ->
             AlertDialog(
@@ -793,6 +820,92 @@ fun MainAppContent(
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun FloatingCallPill(
+    callInfo: ActiveCallInfo,
+    onMaximize: () -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var elapsedSeconds by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(callInfo.connectTimeMillis) {
+        val connectTime = callInfo.connectTimeMillis
+        if (connectTime > 0L) {
+            while (true) {
+                elapsedSeconds = ((System.currentTimeMillis() - connectTime) / 1000).coerceAtLeast(0L)
+                delay(1000)
+            }
+        } else {
+            elapsedSeconds = 0L
+        }
+    }
+
+    val minutes = elapsedSeconds / 60
+    val seconds = elapsedSeconds % 60
+    val timerText = if (callInfo.connectTimeMillis > 0L) String.format("%02d:%02d", minutes, seconds) else "In Call..."
+
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = Color(0xFF16A34A),
+        contentColor = Color.White,
+        shadowElevation = 8.dp,
+        modifier = modifier
+            .statusBarsPadding()
+            .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .clickable { onMaximize() }
+            .testTag("floating_call_pill")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Call,
+                contentDescription = "Active Call",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+
+            Column {
+                Text(
+                    text = callInfo.displayName ?: callInfo.phoneNumber,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = timerText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            IconButton(
+                onClick = onDisconnect,
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(Color(0xFFDC2626), CircleShape)
+                    .testTag("floating_pill_hangup_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CallEnd,
+                    contentDescription = "End Call",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }

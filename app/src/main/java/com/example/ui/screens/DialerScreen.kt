@@ -17,12 +17,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.ui.components.WhatsAppIcon
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.automirrored.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallMissed
+import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContactPhone
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
@@ -61,6 +69,8 @@ import com.example.data.FavoriteContact
 import com.example.data.RecentCall
 import com.example.telecom.SimInfo
 import com.example.ui.components.AddFavoriteDialog
+import com.example.ui.components.ContactSaveDestination
+import com.example.ui.components.CreateContactDialog
 import com.example.ui.components.ContactPickerDialog
 import com.example.ui.components.FavoritesSection
 import com.example.ui.components.Keypad
@@ -79,6 +89,81 @@ import com.example.util.ContactHelper
 import com.example.util.DeviceContact
 import com.example.util.T9Helper
 import com.example.util.T9SearchResult
+
+@Composable
+private fun QuickRecentsSection(
+    recentCalls: List<RecentCall>,
+    onSelectNumber: (String) -> Unit
+) {
+    if (recentCalls.isEmpty()) return
+    val topRecent = remember(recentCalls) { recentCalls.take(6) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = "QUICK RECENTS",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            topRecent.forEach { call ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onSelectNumber(call.phoneNumber) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (call.callType) {
+                                1 -> Icons.AutoMirrored.Filled.CallReceived
+                                2 -> Icons.AutoMirrored.Filled.CallMade
+                                else -> Icons.AutoMirrored.Filled.CallMissed
+                            },
+                            contentDescription = null,
+                            tint = when (call.callType) {
+                                1 -> Color(0xFF16A34A)
+                                2 -> MaterialTheme.colorScheme.primary
+                                else -> Color(0xFFDC2626)
+                            },
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Column {
+                            Text(
+                                text = call.callerName?.ifBlank { null } ?: call.phoneNumber,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = call.phoneNumber,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun DialerScreen(
@@ -100,6 +185,7 @@ fun DialerScreen(
     onSimulateCall: (String, String) -> Unit,
     onCreateRuleForNumber: (String) -> Unit,
     onAddFavorite: (String, String, String, String?) -> Unit,
+    onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onDeleteFavorite: (FavoriteContact) -> Unit,
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit = { _, _ -> },
     onAssignSpeedDialSlot: (Int, String, String, String?) -> Unit = { _, _, _, _ -> },
@@ -108,6 +194,7 @@ fun DialerScreen(
     modifier: Modifier = Modifier
 ) {
     var showContactPicker by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
     var showAddFavoriteDialog by remember { mutableStateOf(false) }
     var assignSpeedDialSlotTarget by remember { mutableStateOf<Int?>(null) }
     var speedDialActionSlotTarget by remember { mutableStateOf<Pair<Int, FavoriteContact>?>(null) }
@@ -184,38 +271,54 @@ fun DialerScreen(
                 .weight(1f),
             contentAlignment = Alignment.BottomCenter
         ) {
-            // FAVORITES SECTION - Shown prominently when app opens and number is empty
-            if (number.isEmpty() && favorites.isNotEmpty()) {
-                FavoritesSection(
-                    favorites = favorites,
-                    onSelectContact = { selectedNumber ->
-                        onSelectContactNumber(selectedNumber)
-                    },
-                    onCallContact = { selectedNumber ->
-                        val normNum = selectedNumber.replace(Regex("[^0-9+]"), "")
-                        val matchedDevContact = deviceContacts.firstOrNull { dc ->
-                            dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
-                            dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum
-                        }
-                        val matchedFav = favorites.firstOrNull { it.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum }
-                        if (matchedDevContact != null && matchedDevContact.phoneNumbers.size > 1) {
-                            multiNumberContactToCall = matchedDevContact
-                            multiNumberSpeedDialSlot = null
-                            multiNumberFavoriteTarget = matchedFav
-                        } else {
-                            onSelectContactNumber(selectedNumber)
-                            onPlaceCall(selectedNumber, null)
-                        }
-                    },
-                    onCreateRule = { selectedNumber ->
-                        onCreateRuleForNumber(selectedNumber)
-                    },
-                    onAddFavoriteClick = {
-                        showAddFavoriteDialog = true
-                    },
-                    onDeleteFavorite = onDeleteFavorite,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
+            // QUICK RECENTS & FAVORITES SECTION - Shown prominently when app opens and number is empty
+            if (number.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom
+                ) {
+                    if (recentCalls.isNotEmpty()) {
+                        QuickRecentsSection(
+                            recentCalls = recentCalls,
+                            onSelectNumber = { onSelectContactNumber(it) }
+                        )
+                    }
+                    if (favorites.isNotEmpty()) {
+                        FavoritesSection(
+                            favorites = favorites,
+                            onSelectContact = { selectedNumber ->
+                                onSelectContactNumber(selectedNumber)
+                            },
+                            onCallContact = { selectedNumber ->
+                                val normNum = selectedNumber.replace(Regex("[^0-9+]"), "")
+                                val matchedDevContact = deviceContacts.firstOrNull { dc ->
+                                    dc.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normNum } ||
+                                    dc.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum
+                                }
+                                val matchedFav = favorites.firstOrNull { it.phoneNumber.replace(Regex("[^0-9+]"), "") == normNum }
+                                if (matchedDevContact != null && matchedDevContact.phoneNumbers.size > 1) {
+                                    multiNumberContactToCall = matchedDevContact
+                                    multiNumberSpeedDialSlot = null
+                                    multiNumberFavoriteTarget = matchedFav
+                                } else {
+                                    onSelectContactNumber(selectedNumber)
+                                    onPlaceCall(selectedNumber, null)
+                                }
+                            },
+                            onCreateRule = { selectedNumber ->
+                                onCreateRuleForNumber(selectedNumber)
+                            },
+                            onAddFavoriteClick = {
+                                showAddFavoriteDialog = true
+                            },
+                            onDeleteFavorite = onDeleteFavorite,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        )
+                    }
+                }
             } else if (number.isNotEmpty()) {
                 // When number is entered, show matched contact info and T9 search matches above the edit box
                 Column(
@@ -413,7 +516,7 @@ fun DialerScreen(
                 .padding(bottom = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Dialed Number Display Area with Contact Picker & Backspace (Fixed 56.dp)
+            // Dialed Number Display Area with Contact Picker / Overflow Menu & Backspace (Fixed 56.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -426,19 +529,56 @@ fun DialerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Contact Picker Button (select a contact phone number directly)
-                    IconButton(
-                        onClick = { showContactPicker = true },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("pick_contact_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContactPhone,
-                            contentDescription = "Select Contact",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp)
-                        )
+                    Box {
+                        if (number.isEmpty()) {
+                            IconButton(
+                                onClick = { showContactPicker = true },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("pick_contact_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContactPhone,
+                                    contentDescription = "Select Contact",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { showOverflowMenu = true },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("dialer_overflow_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More Options",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Add 2-sec pause (,)") },
+                                    onClick = {
+                                        onDigitPress(',')
+                                        showOverflowMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Add wait (;)") },
+                                    onClick = {
+                                        onDigitPress(';')
+                                        showOverflowMenu = false
+                                    }
+                                )
+                            }
+                        }
                     }
 
                     if (number.isEmpty()) {
@@ -527,6 +667,8 @@ fun DialerScreen(
                 onDigitLongPress = { digit ->
                     when (digit) {
                         '0' -> onDigitPress('+')
+                        '*' -> onDigitPress(',')
+                        '#' -> onDigitPress(';')
                         '1' -> {
                             val vmNumber = ContactHelper.getVoicemailNumber(context)
                             speedDialToast = "Voicemail ($vmNumber)"
@@ -727,6 +869,7 @@ fun DialerScreen(
     if (showContactPicker) {
         ContactPickerDialog(
             favorites = favorites,
+            deviceContacts = deviceContacts,
             onContactSelected = { _, selectedNumber, _ ->
                 onSelectContactNumber(selectedNumber)
             },
@@ -734,18 +877,17 @@ fun DialerScreen(
         )
     }
 
-    // Add Favorite Dialog
+    // Add Favorite / New Contact Dialog
     if (showAddFavoriteDialog) {
-        AddFavoriteDialog(
+        CreateContactDialog(
             initialNumber = number,
             initialName = matchedContact?.name ?: "",
-            initialPhotoUri = matchedContact?.photoUri,
+            dialogTitle = "Add to Favorites",
+            initialAddToFavorites = true,
             onDismiss = { showAddFavoriteDialog = false },
-            onSave = { name, favNumber, label, photoUri ->
-                onAddFavorite(name, favNumber, label, photoUri)
-            },
-            onPickFromContacts = {
-                showContactPicker = true
+            onSave = { name, favNumber, label, destination, addToFavs ->
+                onAddNewContact(name, favNumber, label, destination, addToFavs)
+                showAddFavoriteDialog = false
             }
         )
     }
@@ -830,6 +972,7 @@ fun DialerScreen(
         val targetSlot = assignSpeedDialSlotTarget!!
         ContactPickerDialog(
             favorites = favorites,
+            deviceContacts = deviceContacts,
             onContactSelected = { name, number, photoUri ->
                 onAssignSpeedDialSlot(targetSlot, name, number, photoUri)
                 val displayName = name.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: name

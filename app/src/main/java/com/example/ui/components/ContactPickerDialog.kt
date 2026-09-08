@@ -61,7 +61,8 @@ import com.example.util.DeviceContact
 
 @Composable
 fun ContactPickerDialog(
-    favorites: List<FavoriteContact>,
+    favorites: List<FavoriteContact> = emptyList(),
+    deviceContacts: List<DeviceContact> = emptyList(),
     onContactSelected: (name: String, number: String, photoUri: String?) -> Unit,
     onDismiss: () -> Unit,
     title: String = "Select Contact",
@@ -69,7 +70,7 @@ fun ContactPickerDialog(
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
+    var loadedContacts by remember { mutableStateOf(deviceContacts) }
 
     // System Contact Picker contract launcher
     val systemPickerLauncher = rememberLauncherForActivityResult(
@@ -84,40 +85,23 @@ fun ContactPickerDialog(
         }
     }
 
-    LaunchedEffect(Unit) {
-        val fetched = ContactHelper.fetchDeviceContacts(context)
-        deviceContacts = fetched
+    LaunchedEffect(deviceContacts) {
+        if (deviceContacts.isNotEmpty()) {
+            loadedContacts = deviceContacts
+        } else {
+            val fetched = ContactHelper.fetchDeviceContacts(context)
+            loadedContacts = fetched
+        }
     }
 
-    // Combine favorites and device contacts, with sample fallback if device contacts are empty
-    val sampleContacts = remember {
-        listOf(
-            DeviceContact("Apartment Gate", "5550199", "Intercom"),
-            DeviceContact("Mom", "+1 (555) 234-5678", "Family"),
-            DeviceContact("Office IVR", "18005550100", "Work"),
-            DeviceContact("Sarah Jenkins", "+1 (555) 890-1234", "Mobile"),
-            DeviceContact("Dr. Robert Smith", "+1 (555) 345-6789", "Doctor"),
-            DeviceContact("Delivery Courier", "+1 (555) 456-7890", "Work"),
-            DeviceContact("Home Security", "+1 (800) 555-0199", "Home")
-        )
-    }
-
-    val combinedList = remember(deviceContacts, favorites, sampleContacts) {
+    val combinedList = remember(loadedContacts, favorites) {
         val list = mutableListOf<DeviceContact>()
-        // Add favorites first
         favorites.forEach { fav ->
             list.add(DeviceContact(fav.name, fav.phoneNumber, fav.label, fav.photoUri))
         }
-        // Add actual device contacts
-        deviceContacts.forEach { dc ->
+        loadedContacts.forEach { dc ->
             if (list.none { it.phoneNumber == dc.phoneNumber }) {
                 list.add(dc)
-            }
-        }
-        // Add sample fallback contacts if list is short
-        sampleContacts.forEach { sc ->
-            if (list.none { it.phoneNumber == sc.phoneNumber }) {
-                list.add(sc)
             }
         }
         list
@@ -169,7 +153,7 @@ fun ContactPickerDialog(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.size(8.dp))
-                    Text("Open System Contact App")
+                    Text("Open Phone Contacts App")
                 }
 
                 // Search field

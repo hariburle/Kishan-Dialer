@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -292,7 +293,7 @@ fun CallLogScreen(
                 .testTag("call_log_list"),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(groupedCalls, key = { it.primaryCall.id }) { group ->
+            itemsIndexed(groupedCalls, key = { index, group -> "${group.primaryCall.id}_${group.primaryCall.timestamp}_$index" }) { _, group ->
                 val callDigits = group.primaryCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
                 val isFav = favorites.any { fav ->
                     val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)

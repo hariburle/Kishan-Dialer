@@ -117,4 +117,22 @@ interface AppDao {
 
     @Query("DELETE FROM ignored_contacts WHERE phoneNumber = :number")
     suspend fun deleteIgnoredContactByNumber(number: String)
+
+    @Query("SELECT * FROM local_contacts ORDER BY name ASC")
+    fun getAllLocalContacts(): Flow<List<LocalContact>>
+
+    @Query("SELECT * FROM local_contacts ORDER BY name ASC")
+    suspend fun getAllLocalContactsList(): List<LocalContact>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLocalContact(contact: LocalContact): Long
+
+    @Update
+    suspend fun updateLocalContact(contact: LocalContact)
+
+    @Delete
+    suspend fun deleteLocalContact(contact: LocalContact)
+
+    @Query("DELETE FROM local_contacts WHERE phoneNumber = :phoneNumber")
+    suspend fun deleteLocalContactByNumber(phoneNumber: String)
 }

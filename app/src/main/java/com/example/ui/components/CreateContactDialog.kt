@@ -22,18 +22,21 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.util.ContactHelper
 
 enum class ContactSaveDestination {
-    GOOGLE_DEVICE,
+    PHONE_CONTACTS,
     APP_ONLY
 }
 
@@ -41,20 +44,35 @@ enum class ContactSaveDestination {
 fun CreateContactDialog(
     initialNumber: String = "",
     initialName: String = "",
+    dialogTitle: String = "New Contact",
+    initialAddToFavorites: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(initialName) }
     var number by remember { mutableStateOf(initialNumber) }
     var label by remember { mutableStateOf("Mobile") }
-    var saveDestination by remember { mutableStateOf(ContactSaveDestination.GOOGLE_DEVICE) }
-    var addToFavorites by remember { mutableStateOf(false) }
+    var saveDestination by remember { mutableStateOf(ContactSaveDestination.PHONE_CONTACTS) }
+    var addToFavorites by remember { mutableStateOf(initialAddToFavorites) }
+
+    LaunchedEffect(number) {
+        if (number.isNotBlank() && name.isBlank()) {
+            val contact = ContactHelper.lookupContactByNumber(context, number)
+            if (contact != null) {
+                name = contact.name
+                if (label.isBlank() || label == "Mobile") {
+                    label = contact.label
+                }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "New Contact",
+                text = dialogTitle,
                 fontWeight = FontWeight.Bold
             )
         },
@@ -92,23 +110,23 @@ fun CreateContactDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Option 1: Google / Device Contacts
+                // Option 1: Phone Contacts
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (saveDestination == ContactSaveDestination.GOOGLE_DEVICE) {
+                    color = if (saveDestination == ContactSaveDestination.PHONE_CONTACTS) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                     } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { saveDestination = ContactSaveDestination.GOOGLE_DEVICE }
+                        .clickable { saveDestination = ContactSaveDestination.PHONE_CONTACTS }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = saveDestination == ContactSaveDestination.GOOGLE_DEVICE,
-                            onClick = { saveDestination = ContactSaveDestination.GOOGLE_DEVICE }
+                            selected = saveDestination == ContactSaveDestination.PHONE_CONTACTS,
+                            onClick = { saveDestination = ContactSaveDestination.PHONE_CONTACTS }
                         )
                         Icon(
                             imageVector = Icons.Default.CloudUpload,
@@ -118,12 +136,12 @@ fun CreateContactDialog(
                         )
                         Column {
                             Text(
-                                text = "Google / Device Contacts",
+                                text = "Phone Contacts",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Syncs automatically to your Google account",
+                                text = "Saved to your phone's contacts app & synced accounts",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

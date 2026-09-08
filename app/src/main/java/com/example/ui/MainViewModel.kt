@@ -3,8 +3,12 @@ package com.example.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.CallLog
 import android.telecom.Call
 import android.telecom.TelecomManager
 import androidx.lifecycle.ViewModel
@@ -16,6 +20,7 @@ import com.example.data.AutomationLog
 import com.example.data.CallerRule
 import com.example.data.FavoriteContact
 import com.example.data.IgnoredContact
+import com.example.data.LocalContact
 import com.example.data.RecentCall
 import com.example.telecom.ActiveCallInfo
 import com.example.telecom.AutomationStep
@@ -32,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 data class CloudContactConfirmation(
     val title: String,
@@ -238,8 +244,10 @@ class MainViewModel(
     val rules: StateFlow<List<CallerRule>> = repository.allRules
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentCalls: StateFlow<List<RecentCall>> = repository.recentCalls
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _combinedRecentCalls = MutableStateFlow<List<RecentCall>>(emptyList())
+    val recentCalls: StateFlow<List<RecentCall>> = _combinedRecentCalls.asStateFlow()
+
+    private var callLogObserver: ContentObserver? = null
 
     val favorites: StateFlow<List<FavoriteContact>> = repository.favorites
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -255,15 +263,97 @@ class MainViewModel(
 
     init {
         refreshContacts()
+        refreshRecentCalls()
         refreshSimCards()
         registerContactsObserver()
+        registerCallLogObserver()
+        viewModelScope.launch {
+            repository.localContacts.collect {
+                refreshContacts()
+            }
+        }
+        viewModelScope.launch {
+            repository.recentCalls.collect {
+                refreshRecentCalls()
+            }
+        }
+    }
+
+    fun refreshRecentCalls() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+                val roomCalls = repository.getAllRecentCallsList()
+                val systemCalls = ContactHelper.fetchDeviceCallHistory(appContext, limit = 100)
+
+                val merged = mutableListOf<RecentCall>()
+                val handledRoomIds = mutableSetOf<Long>()
+
+                systemCalls.forEach { sysCall ->
+                    val sysNorm = normDigits(sysCall.phoneNumber)
+                    val matchingRoomCall = roomCalls.firstOrNull { roomCall ->
+                        val roomNorm = normDigits(roomCall.phoneNumber)
+                        val numMatches = (sysNorm.isNotBlank() && roomNorm == sysNorm)
+                        val timeMatches = Math.abs(roomCall.timestamp - sysCall.timestamp) < 5000L
+                        numMatches && timeMatches
+                    }
+
+                    if (matchingRoomCall != null) {
+                        handledRoomIds.add(matchingRoomCall.id)
+                        merged.add(
+                            matchingRoomCall.copy(
+                                durationSeconds = if (matchingRoomCall.durationSeconds > 0) matchingRoomCall.durationSeconds else sysCall.durationSeconds,
+                                callerName = matchingRoomCall.callerName ?: sysCall.callerName
+                            )
+                        )
+                    } else {
+                        merged.add(sysCall)
+                    }
+                }
+
+                roomCalls.forEach { roomCall ->
+                    if (!handledRoomIds.contains(roomCall.id)) {
+                        merged.add(roomCall)
+                    }
+                }
+
+                merged.sortByDescending { it.timestamp }
+                _combinedRecentCalls.value = merged
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun refreshContacts() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val list = ContactHelper.fetchDeviceContacts(appContext)
-                _deviceContacts.value = list
+                fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+
+                val deviceList = ContactHelper.fetchDeviceContacts(appContext)
+                val localList = repository.getAllLocalContactsList()
+                val currentFavs = repository.getAllFavoritesList()
+
+                val favDigits = currentFavs.map { normDigits(it.phoneNumber) }.filter { it.isNotEmpty() }.toSet()
+
+                val localAsDeviceContacts = localList.map { lc ->
+                    val isFav = favDigits.contains(normDigits(lc.phoneNumber))
+                    DeviceContact(
+                        name = lc.name,
+                        phoneNumber = lc.phoneNumber,
+                        label = lc.label,
+                        photoUri = lc.photoUri,
+                        nickname = lc.nickname,
+                        isStarred = isFav,
+                        isAppOnly = true
+                    )
+                }
+
+                val combined = (deviceList + localAsDeviceContacts).distinctBy {
+                    it.name.trim().lowercase() + "_" + normDigits(it.phoneNumber)
+                }
+
+                _deviceContacts.value = combined
                 syncWithDeviceContacts()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -289,9 +379,32 @@ class MainViewModel(
         }
     }
 
+    private fun registerCallLogObserver() {
+        try {
+            callLogObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    refreshRecentCalls()
+                }
+            }
+            appContext.contentResolver.registerContentObserver(
+                CallLog.Calls.CONTENT_URI,
+                true,
+                callLogObserver!!
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         contactsObserver?.let {
+            try {
+                appContext.contentResolver.unregisterContentObserver(it)
+            } catch (_: Exception) {}
+        }
+        callLogObserver?.let {
             try {
                 appContext.contentResolver.unregisterContentObserver(it)
             } catch (_: Exception) {}
@@ -668,13 +781,19 @@ class MainViewModel(
 
     fun deleteRecentCall(call: RecentCall) {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteRecentCall(call)
+            if (call.id > 0L) {
+                repository.deleteRecentCallById(call.id)
+            } else {
+                repository.deleteRecentCallsForNumber(call.phoneNumber)
+            }
+            refreshRecentCalls()
         }
     }
 
     fun deleteRecentCallsForNumber(phoneNumber: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteRecentCallsForNumber(phoneNumber)
+            refreshRecentCalls()
         }
     }
 
@@ -748,8 +867,16 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             if (saveToDevice) {
                 ContactHelper.saveContactToDevice(appContext, name, phoneNumber, label)
+            } else {
+                repository.insertLocalContact(
+                    LocalContact(
+                        name = name,
+                        phoneNumber = phoneNumber,
+                        label = label
+                    )
+                )
             }
-            if (addToFavorites || !saveToDevice) {
+            if (addToFavorites) {
                 val fav = FavoriteContact(
                     name = name,
                     phoneNumber = phoneNumber,
@@ -758,12 +885,55 @@ class MainViewModel(
                 )
                 repository.insertFavorite(fav)
             }
+            refreshContacts()
         }
     }
 
-    fun syncAppContactToGoogle(contact: DeviceContact) {
+    fun syncAppContactToPhone(contact: DeviceContact) {
         viewModelScope.launch(Dispatchers.IO) {
             ContactHelper.saveContactToDevice(appContext, contact.name, contact.phoneNumber, contact.label)
+            if (contact.isAppOnly) {
+                repository.deleteLocalContactByNumber(contact.phoneNumber)
+            }
+            refreshContacts()
+        }
+    }
+
+    private suspend fun getContactInfoForConfirmation(phoneNumber: String, name: String): Pair<Boolean, Boolean> {
+        fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+        val cleanDigits = normDigits(phoneNumber)
+
+        val matched = _deviceContacts.value.firstOrNull { dc ->
+            (cleanDigits.length >= 7 && normDigits(dc.phoneNumber) == cleanDigits) ||
+            dc.name.equals(name.trim(), ignoreCase = true)
+        }
+
+        if (matched != null) {
+            return Pair(matched.isAppOnly, matched.isStarred)
+        }
+
+        val localList = repository.getAllLocalContactsList()
+        val isLocal = localList.any { (cleanDigits.length >= 7 && normDigits(it.phoneNumber) == cleanDigits) || it.name.equals(name.trim(), ignoreCase = true) }
+        if (isLocal) {
+            return Pair(true, false)
+        }
+
+        val systemContact = ContactHelper.lookupContactByNumber(appContext, phoneNumber)
+        return if (systemContact != null) {
+            Pair(false, systemContact.isStarred)
+        } else {
+            Pair(true, false)
+        }
+    }
+
+    fun syncAllAppContactsToDevice() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val localList = repository.getAllLocalContactsList()
+            for (lc in localList) {
+                ContactHelper.saveContactToDevice(appContext, lc.name, lc.phoneNumber, lc.label)
+                repository.deleteLocalContact(lc)
+            }
+            refreshContacts()
         }
     }
 
@@ -814,42 +984,43 @@ class MainViewModel(
                         photoUri = photoUri ?: existing.photoUri
                     )
                 )
-                return@launch
-            }
-
-            val colors = listOf(0xFF2563EBL, 0xFF16A34AL, 0xFFDC2626L, 0xFFD97706L, 0xFF7C3AEDL, 0xFF0891B2L)
-            val color = colors[kotlin.math.abs(name.hashCode()) % colors.size]
-            val maxOrder = currentList.maxOfOrNull { it.sortOrder } ?: -1
-            repository.insertFavorite(
-                com.example.data.FavoriteContact(
-                    name = name.trim(),
-                    phoneNumber = phoneNumber.trim(),
-                    label = label,
-                    avatarColor = color,
-                    photoUri = photoUri,
-                    sortOrder = maxOrder + 1
+            } else {
+                val colors = listOf(0xFF2563EBL, 0xFF16A34AL, 0xFFDC2626L, 0xFFD97706L, 0xFF7C3AEDL, 0xFF0891B2L)
+                val color = colors[abs(name.hashCode()) % colors.size]
+                val maxOrder = currentList.maxOfOrNull { it.sortOrder } ?: -1
+                repository.insertFavorite(
+                    FavoriteContact(
+                        name = name.trim(),
+                        phoneNumber = phoneNumber.trim(),
+                        label = label,
+                        avatarColor = color,
+                        photoUri = photoUri,
+                        sortOrder = maxOrder + 1
+                    )
                 )
-            )
-        }
-
-        // Ask explicit user confirmation before starring in Google Account Contacts in the cloud
-        _pendingCloudConfirmation.value = CloudContactConfirmation(
-            title = "Star in Google Account Contacts?",
-            message = "Added '$name' to favorites in this app.\n\nWould you like to also star this contact in your Google Account Contacts in the cloud?",
-            contactName = name,
-            confirmButtonText = "Star in Google Contacts",
-            secondaryButtonText = null,
-            dismissButtonText = "Keep in App Only",
-            onConfirmCloudAction = {
-                viewModelScope.launch(Dispatchers.IO) {
-                    ContactHelper.setContactStarred(appContext, phoneNumber, true)
-                }
-            },
-            onSecondaryAction = null,
-            onDismissOrCancel = {
-                // Kept in app only; Google Account Contacts remains unchanged
             }
-        )
+
+            val (isAppOnly, _) = getContactInfoForConfirmation(phoneNumber, name)
+            if (!isAppOnly) {
+                _pendingCloudConfirmation.value = CloudContactConfirmation(
+                    title = "Star in Phone Contacts?",
+                    message = "Added '$name' to favorites in this app.\n\nWould you like to also star this contact in your Phone Contacts?",
+                    contactName = name,
+                    confirmButtonText = "Star in Phone Contacts",
+                    secondaryButtonText = null,
+                    dismissButtonText = "Keep in App Only",
+                    onConfirmCloudAction = {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            ContactHelper.setContactStarred(appContext, phoneNumber, true)
+                        }
+                    },
+                    onSecondaryAction = null,
+                    onDismissOrCancel = {
+                        // Kept in app only
+                    }
+                )
+            }
+        }
     }
 
     fun updateFavorite(contact: com.example.data.FavoriteContact, newNickname: String? = null) {
@@ -859,27 +1030,29 @@ class MainViewModel(
                 nickname = newNickname?.trim()?.takeIf { it.isNotBlank() } ?: contact.nickname
             )
             repository.updateFavorite(updated)
-        }
 
-        // Only update nickname in cloud Google Contacts if explicitly confirmed
-        if (!newNickname.isNullOrBlank()) {
-            _pendingCloudConfirmation.value = CloudContactConfirmation(
-                title = "Update Google Contacts Nickname?",
-                message = "You set a custom nickname '$newNickname' for ${contact.name}.\n\nDo you want to update this nickname in your Google Account Contacts in the cloud as well?",
-                contactName = contact.name,
-                confirmButtonText = "Update Google Contacts",
-                secondaryButtonText = null,
-                dismissButtonText = "Save in App Only",
-                onConfirmCloudAction = {
-                    viewModelScope.launch(Dispatchers.IO) {
-                        ContactHelper.updateContactNickname(appContext, contact.phoneNumber, newNickname.trim())
-                    }
-                },
-                onSecondaryAction = null,
-                onDismissOrCancel = {
-                    // Saved in app only
+            if (!newNickname.isNullOrBlank()) {
+                val (isAppOnly, _) = getContactInfoForConfirmation(contact.phoneNumber, contact.name)
+                if (!isAppOnly) {
+                    _pendingCloudConfirmation.value = CloudContactConfirmation(
+                        title = "Update Phone Contacts Nickname?",
+                        message = "You set a custom nickname '$newNickname' for ${contact.name}.\n\nDo you want to update this nickname in your Phone Contacts as well?",
+                        contactName = contact.name,
+                        confirmButtonText = "Update Phone Contacts",
+                        secondaryButtonText = null,
+                        dismissButtonText = "Save in App Only",
+                        onConfirmCloudAction = {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                ContactHelper.updateContactNickname(appContext, contact.phoneNumber, newNickname.trim())
+                            }
+                        },
+                        onSecondaryAction = null,
+                        onDismissOrCancel = {
+                            // Saved in app only
+                        }
+                    )
                 }
-            )
+            }
         }
     }
 
@@ -912,65 +1085,52 @@ class MainViewModel(
     }
 
     fun toggleFavorite(name: String, phoneNumber: String, label: String = "Mobile", photoUri: String? = null) {
-        val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
-        val existing = favorites.value.firstOrNull { fav ->
-            val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
-            (cleanDigits.length >= 7 && favDigits == cleanDigits) ||
-            fav.name.equals(name.trim(), ignoreCase = true)
-        }
-        if (existing != null) {
-            // Confirm before removing favorite or modifying Google Contacts
-            _pendingCloudConfirmation.value = CloudContactConfirmation(
-                title = "Remove '$name' from Favorites?",
-                message = "Do you want to remove '$name' from your favorites?\n\nWould you like to also unfavorite/unstar this contact in your Google Account Contacts in the cloud, or only remove it from this app?",
-                contactName = name,
-                confirmButtonText = "Remove & Unstar in Google",
-                secondaryButtonText = "Remove from App Only",
-                dismissButtonText = "Cancel",
-                onConfirmCloudAction = {
-                    viewModelScope.launch(Dispatchers.IO) {
-                        ContactHelper.setContactStarred(appContext, existing.phoneNumber, false)
-                        repository.deleteFavorite(existing)
-                    }
-                },
-                onSecondaryAction = {
-                    viewModelScope.launch(Dispatchers.IO) {
-                        repository.deleteFavorite(existing)
-                    }
-                },
-                onDismissOrCancel = {
-                    // Cancelled, do not remove
-                }
-            )
-        } else {
-            addFavorite(name, phoneNumber, label, photoUri)
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val existing = favorites.value.firstOrNull { fav ->
+                val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                (cleanDigits.length >= 7 && favDigits == cleanDigits) ||
+                fav.name.equals(name.trim(), ignoreCase = true)
+            }
+            if (existing != null) {
+                deleteFavorite(existing)
+            } else {
+                addFavorite(name, phoneNumber, label, photoUri)
+            }
         }
     }
 
-    fun deleteFavorite(contact: com.example.data.FavoriteContact) {
-        // Prompt for confirmation before removing or modifying Google Contacts
-        _pendingCloudConfirmation.value = CloudContactConfirmation(
-            title = "Remove '${contact.name}' from Favorites?",
-            message = "Do you want to remove '${contact.name}' from your favorites?\n\nWould you like to also unfavorite/unstar this contact in your Google Account Contacts in the cloud, or only remove it from this app?",
-            contactName = contact.name,
-            confirmButtonText = "Remove & Unstar in Google",
-            secondaryButtonText = "Remove from App Only",
-            dismissButtonText = "Cancel",
-            onConfirmCloudAction = {
-                viewModelScope.launch(Dispatchers.IO) {
-                    ContactHelper.setContactStarred(appContext, contact.phoneNumber, false)
-                    repository.deleteFavorite(contact)
-                }
-            },
-            onSecondaryAction = {
-                viewModelScope.launch(Dispatchers.IO) {
-                    repository.deleteFavorite(contact)
-                }
-            },
-            onDismissOrCancel = {
-                // Cancelled, do not remove
+    fun deleteFavorite(contact: FavoriteContact) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val (isAppOnly, isStarredInPhone) = getContactInfoForConfirmation(contact.phoneNumber, contact.name)
+            if (isAppOnly || !isStarredInPhone) {
+                // Remove from app favorites directly without asking about Phone Contacts
+                repository.deleteFavorite(contact)
+            } else {
+                _pendingCloudConfirmation.value = CloudContactConfirmation(
+                    title = "Remove '${contact.name}' from Favorites?",
+                    message = "Do you want to remove '${contact.name}' from your favorites?\n\nWould you like to also unfavorite/unstar this contact in your Phone Contacts, or only remove it from this app?",
+                    contactName = contact.name,
+                    confirmButtonText = "Remove & Unstar in Phone Contacts",
+                    secondaryButtonText = "Remove from App Only",
+                    dismissButtonText = "Cancel",
+                    onConfirmCloudAction = {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            ContactHelper.setContactStarred(appContext, contact.phoneNumber, false)
+                            repository.deleteFavorite(contact)
+                        }
+                    },
+                    onSecondaryAction = {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            repository.deleteFavorite(contact)
+                        }
+                    },
+                    onDismissOrCancel = {
+                        // Cancelled, do not remove
+                    }
+                )
             }
-        )
+        }
     }
 
     fun markAsSpam(phoneNumber: String, label: String = "Reported Spam") {
@@ -1142,11 +1302,23 @@ class MainViewModel(
     fun updateContact(oldNumber: String, newName: String, newNumber: String, newLabel: String, newNickname: String?) {
         viewModelScope.launch(Dispatchers.IO) {
             ContactHelper.updateContactDetails(appContext, oldNumber, newName, newNumber, newLabel, newNickname)
+            val localList = repository.getAllLocalContactsList()
+            val existingLocal = localList.firstOrNull { it.phoneNumber == oldNumber }
+            if (existingLocal != null) {
+                repository.updateLocalContact(
+                    existingLocal.copy(
+                        name = newName,
+                        phoneNumber = newNumber,
+                        label = newLabel,
+                        nickname = newNickname
+                    )
+                )
+            }
             val fav = favorites.value.firstOrNull { it.phoneNumber == oldNumber }
             if (fav != null) {
                 repository.updateFavorite(fav.copy(name = newName, phoneNumber = newNumber, label = newLabel))
             }
-            syncWithDeviceContacts()
+            refreshContacts()
         }
     }
 

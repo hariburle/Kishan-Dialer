@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -69,7 +70,8 @@ fun ContactsScreen(
     onCreateRule: (String) -> Unit,
     onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onUpdateContact: (oldNumber: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
-    onSyncContactToGoogle: (DeviceContact) -> Unit = {},
+    onSyncContactToPhone: (DeviceContact) -> Unit = {},
+    onSyncAllAppContactsToDevice: () -> Unit = {},
     deviceContacts: List<DeviceContact> = emptyList(),
     onRefreshContacts: () -> Unit = {},
     onPlaceWhatsAppCall: (String) -> Unit = {},
@@ -253,7 +255,10 @@ fun ContactsScreen(
             }
         }
 
-        // Source Filter Chips: All, App Only, Google / Device
+        val appOnlyCount = effectiveContacts.count { it.isAppOnly }
+        val deviceCount = effectiveContacts.count { !it.isAppOnly }
+
+        // Source Filter Chips: All, App Only, Phone Contacts
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -266,7 +271,6 @@ fun ContactsScreen(
                 onClick = { sourceFilter = ContactSourceFilter.ALL },
                 label = { Text("All (${effectiveContacts.size})", fontSize = 12.sp) }
             )
-            val appOnlyCount = effectiveContacts.count { it.isAppOnly }
             FilterChip(
                 selected = sourceFilter == ContactSourceFilter.APP_ONLY,
                 onClick = { sourceFilter = ContactSourceFilter.APP_ONLY },
@@ -276,12 +280,61 @@ fun ContactsScreen(
                     selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             )
-            val deviceCount = effectiveContacts.count { !it.isAppOnly }
             FilterChip(
                 selected = sourceFilter == ContactSourceFilter.DEVICE,
                 onClick = { sourceFilter = ContactSourceFilter.DEVICE },
-                label = { Text("Google / Device ($deviceCount)", fontSize = 12.sp) }
+                label = { Text("Phone Contacts ($deviceCount)", fontSize = 12.sp) }
             )
+        }
+
+        if (sourceFilter == ContactSourceFilter.APP_ONLY && appOnlyCount > 0) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sync All App Contacts",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = "Move $appOnlyCount contact${if (appOnlyCount > 1) "s" else ""} to phone's default contacts app",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            onSyncAllAppContactsToDevice()
+                            Toast.makeText(context, "Synced $appOnlyCount contact${if (appOnlyCount > 1) "s" else ""} to Phone Contacts!", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onTertiary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = "Sync All",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Sync All", fontSize = 12.sp)
+                    }
+                }
+            }
         }
 
         // Sorting controls bar
@@ -551,8 +604,8 @@ fun ContactsScreen(
                                     onToggleFavorite(favName, contact.phoneNumber, contact.label, contact.photoUri)
                                 },
                                 onPlaceWhatsAppCall = onPlaceWhatsAppCall,
-                                onSyncToGoogle = {
-                                    onSyncContactToGoogle(contact)
+                                onSyncToPhone = {
+                                    onSyncContactToPhone(contact)
                                 }
                             )
                         }
@@ -702,8 +755,8 @@ fun ContactsScreen(
                 onCreateRule(num)
                 contactForDetailsSheet = null
             },
-            onSyncToGoogle = {
-                onSyncContactToGoogle(detailContact)
+            onSyncToPhone = {
+                onSyncContactToPhone(detailContact)
             },
             onEditContact = { name, number, label, nickname ->
                 onUpdateContact(detailContact.phoneNumber, name, number, label, nickname)
@@ -741,7 +794,7 @@ private fun ContactRowItem(
     onCreateRule: (String) -> Unit,
     onToggleFavorite: () -> Unit,
     onPlaceWhatsAppCall: (String) -> Unit = {},
-    onSyncToGoogle: () -> Unit = {}
+    onSyncToPhone: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current

@@ -82,6 +82,7 @@ import kotlinx.coroutines.delay
 import com.example.telecom.CallManager
 import com.example.telecom.RoleHelper
 import com.example.ui.MainViewModel
+import com.example.ui.components.ContactSaveDestination
 import com.example.ui.components.WhatsAppIcon
 import com.example.ui.screens.CallLogScreen
 import com.example.ui.screens.ContactsScreen
@@ -372,6 +373,10 @@ fun MainAppContent(
                         onAddFavorite = { name, num, label, photoUri ->
                             viewModel.addFavorite(name, num, label, photoUri)
                         },
+                        onAddNewContact = { name, number, label, destination, addToFavorites ->
+                            val saveToDevice = (destination == ContactSaveDestination.PHONE_CONTACTS)
+                            viewModel.createNewContact(name, number, label, saveToDevice, addToFavorites)
+                        },
                         onAssignSpeedDial = { contact, slot ->
                             viewModel.assignSpeedDial(contact, slot)
                         },
@@ -395,7 +400,8 @@ fun MainAppContent(
                         },
                         isFlipToShhhEnabled = isFlipToShhhEnabled,
                         isShhhActive = isShhhActive,
-                        onToggleFlipToShhh = { viewModel.toggleFlipToShhh() }
+                        onToggleFlipToShhh = { viewModel.toggleFlipToShhh() },
+                        deviceContacts = deviceContacts
                     )
                     1 -> CallLogScreen(
                         recentCalls = recentCalls,
@@ -451,6 +457,10 @@ fun MainAppContent(
                         onAddFavorite = { name, num, label, photoUri ->
                             viewModel.addFavorite(name, num, label, photoUri)
                         },
+                        onAddNewContact = { name, number, label, destination, addToFavorites ->
+                            val saveToDevice = (destination == ContactSaveDestination.PHONE_CONTACTS)
+                            viewModel.createNewContact(name, number, label, saveToDevice, addToFavorites)
+                        },
                         onDeleteFavorite = { fav ->
                             viewModel.deleteFavorite(fav)
                         },
@@ -495,12 +505,15 @@ fun MainAppContent(
                                 name = name,
                                 phoneNumber = num,
                                 label = label,
-                                saveToDevice = destination == com.example.ui.components.ContactSaveDestination.GOOGLE_DEVICE,
+                                saveToDevice = destination == ContactSaveDestination.PHONE_CONTACTS,
                                 addToFavorites = addToFavs
                             )
                         },
-                        onSyncContactToGoogle = { contact ->
-                            viewModel.syncAppContactToGoogle(contact)
+                        onSyncContactToPhone = { contact ->
+                            viewModel.syncAppContactToPhone(contact)
+                        },
+                        onSyncAllAppContactsToDevice = {
+                            viewModel.syncAllAppContactsToDevice()
                         }
                     )
                     4 -> RulesScreen(
@@ -524,7 +537,8 @@ fun MainAppContent(
                         onDeleteRule = { viewModel.deleteRule(it) },
                         onClearLogs = { viewModel.clearLogs() },
                         initiallyShowAddRuleWithNumber = ruleNumberToCreate,
-                        onConsumeAddRuleNumber = { ruleNumberToCreate = null }
+                        onConsumeAddRuleNumber = { ruleNumberToCreate = null },
+                        deviceContacts = deviceContacts
                     )
                 }
             }

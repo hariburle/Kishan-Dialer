@@ -116,7 +116,7 @@ fun ContactDetailsBottomSheet(
     onSetAsDefaultNumber: (number: String, label: String) -> Unit,
     onClearDefaultNumber: () -> Unit,
     onCreateRule: (String) -> Unit,
-    onSyncToGoogle: (() -> Unit)? = null,
+    onSyncToPhone: (() -> Unit)? = null,
     onEditContact: (name: String, phoneNumber: String, label: String, nickname: String?) -> Unit = { _, _, _, _ -> },
     onDismiss: () -> Unit
 ) {
@@ -325,7 +325,7 @@ fun ContactDetailsBottomSheet(
                             try {
                                 context.startActivity(intent)
                             } catch (_: Exception) {
-                                Toast.makeText(context, "Unable to open system contacts manager", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Unable to open Phone Contacts app", Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier
@@ -341,7 +341,7 @@ fun ContactDetailsBottomSheet(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Edit in System Contacts",
+                            text = "Edit in Phone Contacts",
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
@@ -352,7 +352,7 @@ fun ContactDetailsBottomSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (contact.isAppOnly && onSyncToGoogle != null) {
+            if (contact.isAppOnly && onSyncToPhone != null) {
                 Spacer(modifier = Modifier.height(14.dp))
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -372,7 +372,7 @@ fun ContactDetailsBottomSheet(
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Saved locally. Sync to Google Contacts to make it available system-wide.",
+                                text = "Saved locally. Sync to Phone Contacts to make it available system-wide.",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
@@ -381,8 +381,8 @@ fun ContactDetailsBottomSheet(
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                onSyncToGoogle()
-                                Toast.makeText(context, "Synced ${contact.name} to Google Contacts!", Toast.LENGTH_SHORT).show()
+                                onSyncToPhone()
+                                Toast.makeText(context, "Synced ${contact.name} to Phone Contacts!", Toast.LENGTH_SHORT).show()
                             }
                         ) {
                             Text("Sync", fontSize = 12.sp)

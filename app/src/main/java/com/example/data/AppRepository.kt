@@ -69,4 +69,11 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun deleteIgnoredContact(ignored: IgnoredContact) = appDao.deleteIgnoredContact(ignored)
 
     suspend fun deleteIgnoredContactByNumber(number: String) = appDao.deleteIgnoredContactByNumber(number)
+
+    val localContacts: Flow<List<LocalContact>> = appDao.getAllLocalContacts()
+    suspend fun getAllLocalContactsList(): List<LocalContact> = appDao.getAllLocalContactsList()
+    suspend fun insertLocalContact(contact: LocalContact): Long = appDao.insertLocalContact(contact)
+    suspend fun updateLocalContact(contact: LocalContact) = appDao.updateLocalContact(contact)
+    suspend fun deleteLocalContact(contact: LocalContact) = appDao.deleteLocalContact(contact)
+    suspend fun deleteLocalContactByNumber(phoneNumber: String) = appDao.deleteLocalContactByNumber(phoneNumber)
 }

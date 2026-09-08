@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.TouchApp
 import com.example.ui.components.ContactPickerDialog
+import com.example.util.DeviceContact
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -100,6 +101,7 @@ fun RulesScreen(
     onClearLogs: () -> Unit,
     initiallyShowAddRuleWithNumber: String? = null,
     onConsumeAddRuleNumber: () -> Unit = {},
+    deviceContacts: List<DeviceContact> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -573,6 +575,7 @@ fun RulesScreen(
         RuleEditDialog(
             initialRule = editingRule!!,
             favorites = favorites,
+            deviceContacts = deviceContacts,
             onDismiss = {
                 showDialog = false
                 editingRule = null
@@ -770,6 +773,7 @@ private fun AutomationLogItem(log: AutomationLog) {
 private fun RuleEditDialog(
     initialRule: CallerRule,
     favorites: List<FavoriteContact> = emptyList(),
+    deviceContacts: List<DeviceContact> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (CallerRule) -> Unit
 ) {
@@ -881,7 +885,7 @@ private fun RuleEditDialog(
                     OutlinedTextField(
                         value = pattern,
                         onValueChange = { pattern = it },
-                        label = { Text("Caller Number Pattern (or * for any)") },
+                        label = { Text("Number Pattern (or * for any)") },
                         placeholder = { Text("e.g. 5550199 or 18005550100") },
                         singleLine = true,
                         modifier = Modifier.weight(1f).testTag("rule_pattern_input")
@@ -1017,6 +1021,7 @@ private fun RuleEditDialog(
     if (showContactPicker) {
         ContactPickerDialog(
             favorites = favorites,
+            deviceContacts = deviceContacts,
             onContactSelected = { contactName, contactNumber, _ ->
                 pattern = contactNumber
                 if (name.isBlank() || name == "New Automation Rule") {

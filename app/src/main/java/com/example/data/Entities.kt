@@ -77,3 +77,13 @@ data class IgnoredContact(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "local_contacts")
+data class LocalContact(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phoneNumber: String,
+    val label: String = "Mobile",
+    val nickname: String? = null,
+    val photoUri: String? = null
+)
+

@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
+import android.provider.CallLog
 import android.provider.ContactsContract
+import com.example.data.RecentCall
 
 data class ContactPhoneNumber(
     val number: String,
@@ -889,6 +891,63 @@ object ContactHelper {
                             )
                         )
                         matchedCount++
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Permission not granted or query failed
+        }
+        return result
+    }
+
+    /**
+     * Fetches all device call history from system CallLog.Calls.
+     */
+    fun fetchDeviceCallHistory(context: Context, limit: Int = 100): List<RecentCall> {
+        val result = mutableListOf<RecentCall>()
+        try {
+            val projection = arrayOf(
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DATE,
+                CallLog.Calls.DURATION
+            )
+            val cursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${CallLog.Calls.DATE} DESC"
+            )
+            cursor?.use {
+                val numIdx = it.getColumnIndex(CallLog.Calls.NUMBER)
+                val nameIdx = it.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                val typeIdx = it.getColumnIndex(CallLog.Calls.TYPE)
+                val dateIdx = it.getColumnIndex(CallLog.Calls.DATE)
+                val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
+
+                var count = 0
+                while (it.moveToNext() && count < limit) {
+                    val rawNumber = if (numIdx != -1) it.getString(numIdx) ?: "" else ""
+                    val cachedName = if (nameIdx != -1) it.getString(nameIdx) ?: "" else ""
+                    val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
+                    val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
+                    val duration = if (durIdx != -1) it.getLong(durIdx) else 0L
+
+                    if (rawNumber.isNotBlank()) {
+                        val sysId = -Math.abs("${rawNumber}_${date}_$count".hashCode().toLong()).coerceAtLeast(1L)
+                        result.add(
+                            RecentCall(
+                                id = sysId,
+                                phoneNumber = rawNumber,
+                                callerName = cachedName.ifBlank { null },
+                                callType = type,
+                                timestamp = date,
+                                durationSeconds = duration
+                            )
+                        )
+                        count++
                     }
                 }
             }

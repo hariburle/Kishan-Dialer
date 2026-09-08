@@ -89,6 +89,8 @@ import com.example.data.FavoriteContact
 import com.example.data.IgnoredContact
 import com.example.data.RecentCall
 import com.example.ui.components.AddFavoriteDialog
+import com.example.ui.components.ContactSaveDestination
+import com.example.ui.components.CreateContactDialog
 import com.example.ui.components.ContactDetailsBottomSheet
 import com.example.ui.components.ContactPickerDialog
 import com.example.ui.components.EditFavoriteDialog
@@ -117,6 +119,7 @@ fun FavoritesScreen(
     onCreateRule: (String) -> Unit,
     onDeleteFavorite: (FavoriteContact) -> Unit,
     onAddFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit,
+    onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit,
     onMoveFavorite: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onEditFavorite: (FavoriteContact, String?) -> Unit = { _, _ -> },
@@ -130,6 +133,7 @@ fun FavoritesScreen(
     isShhhActive: Boolean = false,
     onToggleFlipToShhh: () -> Unit = {},
     onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
+    deviceContacts: List<DeviceContact> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -847,17 +851,15 @@ fun FavoritesScreen(
         )
     }
 
-    // Add Favorite dialog
+    // Add Favorite / New Contact dialog
     if (showAddDialog) {
-        AddFavoriteDialog(
+        CreateContactDialog(
+            dialogTitle = "Add to Favorites",
+            initialAddToFavorites = true,
             onDismiss = { showAddDialog = false },
-            onSave = { name, number, label, photoUri ->
-                onAddFavorite(name, number, label, photoUri)
+            onSave = { name, number, label, destination, addToFavs ->
+                onAddNewContact(name, number, label, destination, addToFavs)
                 showAddDialog = false
-            },
-            onPickFromContacts = {
-                showAddDialog = false
-                showContactPicker = true
             }
         )
     }
@@ -942,6 +944,7 @@ fun FavoritesScreen(
     if (showContactPicker) {
         ContactPickerDialog(
             favorites = favorites,
+            deviceContacts = deviceContacts,
             title = "Search Contacts to Favorite",
             onContactSelected = { name, number, photoUri ->
                 onAddFavorite(name, number, "Mobile", photoUri)

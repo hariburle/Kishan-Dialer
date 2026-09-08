@@ -1306,7 +1306,52 @@ private fun FavoriteGridCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Reorder Directional Controls: Up, Down, Left, Right (Large accessibility touch targets)
+                    // Left Side: Speed Slot & Edit/Delete Actions
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Surface(
+                            onClick = onSpeedDialClick,
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (contact.speedDialSlot != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = if (contact.speedDialSlot != null) "#${contact.speedDialSlot}" else "+ Speed",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (contact.speedDialSlot != null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onEdit,
+                            modifier = Modifier.size(26.dp).testTag("fav_edit_${contact.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(26.dp).testTag("fav_delete_${contact.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    // Right Side: High-Accessibility Directional Reorder Controls (▲ ▼ ◄ ►) right under thumb
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -1377,49 +1422,6 @@ private fun FavoriteGridCard(
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
-                        }
-                    }
-
-                    // Speed Slot Button
-                    Surface(
-                        onClick = onSpeedDialClick,
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (contact.speedDialSlot != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = if (contact.speedDialSlot != null) "#${contact.speedDialSlot}" else "+ Speed",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (contact.speedDialSlot != null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-
-                    // Edit & Delete Icons
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = onEdit,
-                            modifier = Modifier.size(24.dp).testTag("fav_edit_${contact.id}")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(24.dp).testTag("fav_delete_${contact.id}")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(14.dp)
-                            )
                         }
                     }
                 }

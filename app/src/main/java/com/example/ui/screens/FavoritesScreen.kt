@@ -1306,58 +1306,77 @@ private fun FavoriteGridCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Reorder Directional Controls: Up, Down, Left, Right
+                    // Reorder Directional Controls: Up, Down, Left, Right (Large accessibility touch targets)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(1.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        IconButton(
+                        Surface(
                             onClick = onMoveUpRow,
                             enabled = canMoveUpRow,
-                            modifier = Modifier.size(22.dp).testTag("fav_move_up_${contact.id}")
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (canMoveUpRow) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.size(34.dp).testTag("fav_move_up_${contact.id}")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Move Up Row",
-                                tint = if (canMoveUpRow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(15.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Move Up Row",
+                                    tint = if (canMoveUpRow) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                        IconButton(
+
+                        Surface(
                             onClick = onMoveDownRow,
                             enabled = canMoveDownRow,
-                            modifier = Modifier.size(22.dp).testTag("fav_move_down_${contact.id}")
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (canMoveDownRow) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.size(34.dp).testTag("fav_move_down_${contact.id}")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Move Down Row",
-                                tint = if (canMoveDownRow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(15.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Move Down Row",
+                                    tint = if (canMoveDownRow) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                        IconButton(
+
+                        Surface(
                             onClick = onMoveLeftCol,
                             enabled = canMoveLeftCol,
-                            modifier = Modifier.size(22.dp).testTag("fav_move_left_${contact.id}")
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (canMoveLeftCol) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.size(34.dp).testTag("fav_move_left_${contact.id}")
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                contentDescription = "Move Left Column",
-                                tint = if (canMoveLeftCol) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(15.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    contentDescription = "Move Left Column",
+                                    tint = if (canMoveLeftCol) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                        IconButton(
+
+                        Surface(
                             onClick = onMoveRightCol,
                             enabled = canMoveRightCol,
-                            modifier = Modifier.size(22.dp).testTag("fav_move_right_${contact.id}")
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (canMoveRightCol) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.size(34.dp).testTag("fav_move_right_${contact.id}")
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "Move Right Column",
-                                tint = if (canMoveRightCol) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                modifier = Modifier.size(15.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = "Move Right Column",
+                                    tint = if (canMoveRightCol) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
 

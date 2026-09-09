@@ -44,6 +44,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Dialpad
@@ -51,6 +54,12 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.foundation.BorderStroke
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import android.app.PendingIntent
+import android.app.RemoteAction
+import com.example.telecom.CallNotificationReceiver
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -172,16 +181,95 @@ class MainActivity : ComponentActivity() {
         if (active != null && active.state == android.telecom.Call.STATE_ACTIVE) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    enterPictureInPictureMode(
-                        PictureInPictureParams.Builder()
-                            .setAspectRatio(Rational(16, 9))
-                            .build()
-                    )
+                    enterPictureInPictureMode(buildPipParams())
                 } catch (e: Exception) {
                     Log.w("MainActivity", "Failed to enter PiP mode", e)
                 }
             }
         }
+    }
+
+    fun updatePipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPipMode) {
+            try {
+                setPictureInPictureParams(buildPipParams())
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Failed to update PiP parameters", e)
+            }
+        }
+    }
+
+    private fun buildPipParams(): PictureInPictureParams {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val isMuted = CallManager.isMuted.value
+            val isSpeaker = CallManager.isSpeakerOn.value
+
+            val muteIntent = Intent(this, CallNotificationReceiver::class.java).apply {
+                action = CallNotificationReceiver.ACTION_TOGGLE_MUTE
+            }
+            val mutePendingIntent = PendingIntent.getBroadcast(
+                this,
+                201,
+                muteIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val muteIcon = android.graphics.drawable.Icon.createWithResource(
+                this,
+                if (isMuted) android.R.drawable.stat_notify_call_mute else android.R.drawable.ic_btn_speak_now
+            )
+            val muteAction = RemoteAction(
+                muteIcon,
+                if (isMuted) "Unmute" else "Mute",
+                if (isMuted) "Unmute microphone" else "Mute microphone",
+                mutePendingIntent
+            )
+
+            val speakerIntent = Intent(this, CallNotificationReceiver::class.java).apply {
+                action = CallNotificationReceiver.ACTION_TOGGLE_SPEAKER
+            }
+            val speakerPendingIntent = PendingIntent.getBroadcast(
+                this,
+                202,
+                speakerIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val speakerIcon = android.graphics.drawable.Icon.createWithResource(
+                this,
+                android.R.drawable.stat_sys_speakerphone
+            )
+            val speakerAction = RemoteAction(
+                speakerIcon,
+                if (isSpeaker) "Speaker Off" else "Speaker On",
+                if (isSpeaker) "Switch to earpiece" else "Switch to speaker",
+                speakerPendingIntent
+            )
+
+            val hangupIntent = Intent(this, CallNotificationReceiver::class.java).apply {
+                action = CallNotificationReceiver.ACTION_HANGUP
+            }
+            val hangupPendingIntent = PendingIntent.getBroadcast(
+                this,
+                203,
+                hangupIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val hangupIcon = android.graphics.drawable.Icon.createWithResource(
+                this,
+                android.R.drawable.ic_menu_close_clear_cancel
+            )
+            val hangupAction = RemoteAction(
+                hangupIcon,
+                "End Call",
+                "End ongoing call",
+                hangupPendingIntent
+            )
+
+            return PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setActions(listOf(muteAction, speakerAction, hangupAction))
+                .build()
+        }
+        throw IllegalStateException("Requires API 26+")
     }
 
     override fun onPictureInPictureModeChanged(
@@ -249,6 +337,8 @@ fun MainAppContent(
     val learnedCallModes by viewModel.learnedCallModes.collectAsStateWithLifecycle()
     val defaultStartTab by viewModel.defaultStartTab.collectAsStateWithLifecycle()
     val confirmFavoritesCall by viewModel.confirmFavoritesCall.collectAsStateWithLifecycle()
+    val callAnswerStyle by viewModel.callAnswerStyle.collectAsStateWithLifecycle()
+    val favoriteCardStyle by viewModel.favoriteCardStyle.collectAsStateWithLifecycle()
 
     var hasAppliedDefaultTab by remember { mutableStateOf(false) }
     LaunchedEffect(defaultStartTab) {
@@ -362,6 +452,8 @@ fun MainAppContent(
                         recentCalls = recentCalls,
                         ignoredContacts = ignoredContacts,
                         confirmFavoritesCall = confirmFavoritesCall,
+                        favoriteCardStyle = favoriteCardStyle,
+                        onSetFavoriteCardStyle = { viewModel.setFavoriteCardStyle(it) },
                         getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
@@ -533,6 +625,8 @@ fun MainAppContent(
                         favorites = favorites,
                         themeMode = themeMode,
                         onSetThemeMode = { viewModel.setThemeMode(it) },
+                        favoriteCardStyle = favoriteCardStyle,
+                        onSetFavoriteCardStyle = { viewModel.setFavoriteCardStyle(it) },
                         whatsAppCallMode = whatsAppCallMode,
                         onSetWhatsAppCallMode = { viewModel.setWhatsAppCallMode(it) },
                         onResetWhatsAppChoices = { viewModel.resetWhatsAppChoices() },
@@ -543,6 +637,8 @@ fun MainAppContent(
                         onSetConfirmFavoritesCall = { viewModel.setConfirmFavoritesCall(it) },
                         defaultStartTab = defaultStartTab,
                         onSetDefaultStartTab = { viewModel.setDefaultStartTab(it) },
+                        callAnswerStyle = callAnswerStyle,
+                        onSetCallAnswerStyle = { viewModel.setCallAnswerStyle(it) },
                         onToggleRule = { viewModel.toggleRuleEnabled(it) },
                         onSaveRule = { viewModel.saveRule(it) },
                         onDeleteRule = { viewModel.deleteRule(it) },
@@ -588,7 +684,8 @@ fun MainAppContent(
                     },
                     onMarkSpam = { num -> viewModel.markAsSpam(num) },
                     onDismiss = { viewModel.minimizeCall() },
-                    onClosePostCall = { viewModel.dismissCall() }
+                    onClosePostCall = { viewModel.dismissCall() },
+                    callAnswerStyle = callAnswerStyle
                 )
             }
         }
@@ -606,6 +703,10 @@ fun MainAppContent(
             activeCall?.let { call ->
                 FloatingCallPill(
                     callInfo = call,
+                    isMuted = isMuted,
+                    isSpeakerOn = isSpeakerOn,
+                    onToggleMute = { viewModel.toggleMute() },
+                    onToggleSpeaker = { viewModel.toggleSpeaker() },
                     onMaximize = { viewModel.maximizeCall() },
                     onDisconnect = { viewModel.disconnectCall() }
                 )
@@ -830,15 +931,19 @@ fun MainAppContent(
 @Composable
 private fun FloatingCallPill(
     callInfo: ActiveCallInfo,
+    isMuted: Boolean,
+    isSpeakerOn: Boolean,
+    onToggleMute: () -> Unit,
+    onToggleSpeaker: () -> Unit,
     onMaximize: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var elapsedSeconds by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(callInfo.connectTimeMillis) {
+    LaunchedEffect(callInfo.connectTimeMillis, callInfo.state) {
         val connectTime = callInfo.connectTimeMillis
-        if (connectTime > 0L) {
+        if (connectTime > 0L && callInfo.state == Call.STATE_ACTIVE) {
             while (true) {
                 elapsedSeconds = ((System.currentTimeMillis() - connectTime) / 1000).coerceAtLeast(0L)
                 delay(1000)
@@ -850,83 +955,194 @@ private fun FloatingCallPill(
 
     val minutes = elapsedSeconds / 60
     val seconds = elapsedSeconds % 60
-    val timerText = if (callInfo.connectTimeMillis > 0L) String.format("%02d:%02d", minutes, seconds) else "In Call..."
+    val timerText = if (callInfo.connectTimeMillis > 0L && callInfo.state == Call.STATE_ACTIVE) {
+        String.format("%02d:%02d", minutes, seconds)
+    } else when (callInfo.state) {
+        Call.STATE_RINGING -> "Incoming call"
+        Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling..."
+        Call.STATE_HOLDING -> "On hold"
+        else -> "In Call"
+    }
 
     Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = Color(0xFF16A34A),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF15803D), // Rich notification-bar emerald green
         contentColor = Color.White,
-        shadowElevation = 8.dp,
+        shadowElevation = 10.dp,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
         modifier = modifier
             .statusBarsPadding()
-            .padding(top = 8.dp, start = 16.dp, end = 16.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .clickable { onMaximize() }
+            .padding(top = 8.dp, start = 12.dp, end = 12.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
             .testTag("floating_call_pill")
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Call,
-                contentDescription = "Active Call",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
+            // Clickable left side (Avatar + Name & Status / Duration) that maximizes call
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onMaximize() }
+                    .padding(vertical = 2.dp, horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Avatar circle with photo or caller initial
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFF166534),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    if (!callInfo.photoUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = callInfo.photoUri,
+                            contentDescription = callInfo.displayName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            val initialChar = (callInfo.displayName.takeIf { it.isNotBlank() } ?: callInfo.phoneNumber)
+                                .take(1).uppercase()
+                            Text(
+                                text = initialChar,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
 
-            Column {
-                Text(
-                    text = callInfo.displayName ?: callInfo.phoneNumber,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = timerText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Caller Name & Live Duration Subtitle
+                Column(modifier = Modifier.weight(1f)) {
+                    val displayName = callInfo.displayName.ifBlank { callInfo.phoneNumber }
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Live green pulsing status dot
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(
+                                    if (callInfo.state == Call.STATE_ACTIVE) Color(0xFF4ADE80) else Color(0xFFFBBF24),
+                                    CircleShape
+                                )
+                        )
+                        Text(
+                            text = if (callInfo.state == Call.STATE_ACTIVE) {
+                                "Active • $timerText"
+                            } else {
+                                timerText
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 11.5.sp,
+                            color = Color.White.copy(alpha = 0.92f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
-            IconButton(
-                onClick = onDisconnect,
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(Color(0xFFDC2626), CircleShape)
-                    .testTag("floating_pill_hangup_btn")
+            // Notification-bar action controls: Speakerphone, Mute, End Call
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.CallEnd,
-                    contentDescription = "End Call",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
+                // Speakerphone button
+                IconButton(
+                    onClick = onToggleSpeaker,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (isSpeakerOn) Color.White else Color.White.copy(alpha = 0.22f),
+                            CircleShape
+                        )
+                        .testTag("floating_pill_speaker_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VolumeUp,
+                        contentDescription = if (isSpeakerOn) "Speaker Off" else "Speaker On",
+                        tint = if (isSpeakerOn) Color(0xFF15803D) else Color.White,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+
+                // Mute Microphone button
+                IconButton(
+                    onClick = onToggleMute,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (isMuted) Color(0xFFEF4444) else Color.White.copy(alpha = 0.22f),
+                            CircleShape
+                        )
+                        .testTag("floating_pill_mute_btn")
+                ) {
+                    Icon(
+                        imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = if (isMuted) "Unmute" else "Mute",
+                        tint = Color.White,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+
+                // End Call button
+                IconButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFFDC2626), CircleShape)
+                        .testTag("floating_pill_hangup_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CallEnd,
+                        contentDescription = "End Call",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Clean, compact Picture-in-Picture call banner showing active call duration,
- * caller name, and immediate hangup control when user moves to another app.
+ * Rich Picture-in-Picture notification-style floating call pill showing
+ * caller avatar, name, duration, and speakerphone, mute, and hangup controls
+ * when user is doing something else on the phone.
  */
 @Composable
 fun PipCallContent(viewModel: MainViewModel) {
     val activeCall by viewModel.activeCall.collectAsStateWithLifecycle()
+    val isMuted by viewModel.isMuted.collectAsStateWithLifecycle()
+    val isSpeakerOn by viewModel.isSpeakerOn.collectAsStateWithLifecycle()
     var elapsedSeconds by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(activeCall?.connectTimeMillis) {
+    LaunchedEffect(activeCall?.connectTimeMillis, activeCall?.state) {
         val connectTime = activeCall?.connectTimeMillis ?: 0L
-        if (connectTime > 0L) {
+        if (connectTime > 0L && activeCall?.state == Call.STATE_ACTIVE) {
             while (true) {
-                elapsedSeconds = (System.currentTimeMillis() - connectTime) / 1000
+                elapsedSeconds = ((System.currentTimeMillis() - connectTime) / 1000).coerceAtLeast(0L)
                 delay(1000)
             }
         } else {
@@ -937,60 +1153,131 @@ fun PipCallContent(viewModel: MainViewModel) {
     val minutes = elapsedSeconds / 60
     val seconds = elapsedSeconds % 60
     val timerText = String.format("%02d:%02d", minutes, seconds)
+    val call = activeCall
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
             .testTag("pip_call_container"),
-        color = Color(0xFF16A34A)
+        color = Color(0xFF15803D)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            // Left info: Avatar + Name + Timer
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Phone,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-                Column {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFF166534),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    if (!call?.photoUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = call?.photoUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = (call?.displayName?.takeIf { it.isNotBlank() } ?: call?.phoneNumber ?: "C").take(1).uppercase(),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = activeCall?.displayName ?: "Ongoing call",
+                        text = call?.displayName?.takeIf { it.isNotBlank() } ?: call?.phoneNumber ?: "Ongoing call",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        maxLines = 1
+                        fontSize = 12.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = timerText,
+                        text = "Active • $timerText",
                         color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
                     )
                 }
             }
 
-            IconButton(
-                onClick = { viewModel.disconnectCall() },
-                modifier = Modifier
-                    .size(36.dp)
-                    .testTag("pip_hangup_btn")
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Right actions: Speaker, Mute, Hangup
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.CallEnd,
-                    contentDescription = "Hang up",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                // Speakerphone
+                IconButton(
+                    onClick = { viewModel.toggleSpeaker() },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            if (isSpeakerOn) Color.White else Color.White.copy(alpha = 0.22f),
+                            CircleShape
+                        )
+                        .testTag("pip_speaker_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VolumeUp,
+                        contentDescription = if (isSpeakerOn) "Speaker Off" else "Speaker On",
+                        tint = if (isSpeakerOn) Color(0xFF15803D) else Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Mute
+                IconButton(
+                    onClick = { viewModel.toggleMute() },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            if (isMuted) Color(0xFFEF4444) else Color.White.copy(alpha = 0.22f),
+                            CircleShape
+                        )
+                        .testTag("pip_mute_btn")
+                ) {
+                    Icon(
+                        imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = if (isMuted) "Unmute" else "Mute",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Hang up
+                IconButton(
+                    onClick = { viewModel.disconnectCall() },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color(0xFFDC2626), CircleShape)
+                        .testTag("pip_hangup_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CallEnd,
+                        contentDescription = "Hang up",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

@@ -3,10 +3,12 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +30,13 @@ import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.launch
 import com.example.ui.components.WhatsAppIcon
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -62,6 +71,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
@@ -73,6 +83,9 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -85,6 +98,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -130,6 +144,18 @@ data class PopularContactItem(
     val deviceContact: DeviceContact?
 )
 
+enum class FavCardDesign(val label: String, val styleKey: String) {
+    MODERN_BENTO("Bento", "bento"),
+    QUICK_ACTION("Quick-Action", "quick_action"),
+    MATERIAL_YOU("Material You", "material_you");
+
+    companion object {
+        fun fromKey(key: String): FavCardDesign {
+            return entries.find { it.styleKey == key } ?: MODERN_BENTO
+        }
+    }
+}
+
 @Composable
 fun FavoritesScreen(
     favorites: List<FavoriteContact>,
@@ -152,6 +178,8 @@ fun FavoritesScreen(
     onUpdateIgnoredContactTag: (phoneNumber: String, newTag: String, newName: String) -> Unit = { _, _, _ -> },
     getPreferredCallingMode: (String) -> String = { "cellular" },
     confirmFavoritesCall: Boolean = true,
+    favoriteCardStyle: String = "bento",
+    onSetFavoriteCardStyle: (String) -> Unit = {},
     isFlipToShhhEnabled: Boolean = true,
     isShhhActive: Boolean = false,
     onToggleFlipToShhh: () -> Unit = {},
@@ -166,12 +194,22 @@ fun FavoritesScreen(
     var editTargetContact by remember { mutableStateOf<FavoriteContact?>(null) }
     var editTargetIgnored by remember { mutableStateOf<IgnoredContact?>(null) }
     var isConfigureMode by remember { mutableStateOf(false) }
+    val cardDesign = FavCardDesign.fromKey(favoriteCardStyle)
     var searchQuery by remember { mutableStateOf("") }
-    var localFavorites by remember(favorites) { mutableStateOf(favorites) }
+    var localFavorites by remember { mutableStateOf(favorites) }
     var draggingContactId by remember { mutableStateOf<Long?>(null) }
-    var dragStartAnchorRect by remember { mutableStateOf<Rect?>(null) }
-    var totalTouchOffset by remember { mutableStateOf(Offset.Zero) }
-    val activeItemBounds = remember { mutableStateMapOf<Long, Rect>() }
+    var dragStartOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragTotalOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragItemSize by remember { mutableStateOf(IntSize.Zero) }
+    val gridState = rememberLazyGridState()
+    val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+
+    LaunchedEffect(favorites) {
+        if (draggingContactId == null) {
+            localFavorites = favorites
+        }
+    }
     var isSearchActive by remember { mutableStateOf(false) }
     var pendingCallConfirmation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var deviceContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
@@ -274,42 +312,86 @@ fun FavoritesScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("favorites_search_input"),
-                placeholder = { Text("Search...") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            if (isConfigureMode) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DragHandle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "Reorder Favorites",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Drag grip to rearrange • Arrows for 1-step moves",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                             )
                         }
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                }
+            } else {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("favorites_search_input"),
+                    placeholder = { Text("Search...") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
-            )
+            }
 
             if (favorites.isNotEmpty()) {
                 FilledIconButton(
@@ -569,6 +651,7 @@ fun FavoritesScreen(
                 val isCompact = false
 
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(columnsCount),
                     contentPadding = PaddingValues(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -614,12 +697,15 @@ fun FavoritesScreen(
                             }
                         }
                     } else {
-                        if (popularContacts.isNotEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 4.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
@@ -647,6 +733,37 @@ fun FavoritesScreen(
                                         )
                                     }
                                 }
+
+                                // Interactive Card Design Selector
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FavCardDesign.values().forEach { design ->
+                                        val isSelected = (cardDesign == design)
+                                        Surface(
+                                            onClick = {
+                                                onSetFavoriteCardStyle(design.styleKey)
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.height(24.dp)
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier.padding(horizontal = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = design.label,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -657,29 +774,28 @@ fun FavoritesScreen(
                             Box(
                                 modifier = Modifier
                                     .animateItem()
-                                    .onGloballyPositioned { coords ->
-                                        activeItemBounds[contact.id] = coords.boundsInParent()
-                                    }
                                     .alpha(if (isBeingDragged) 0.15f else 1.0f)
                             ) {
                                 FavoriteGridCard(
                                     contact = contact,
+                                    cardDesign = cardDesign,
                                     isCompact = isCompact,
                                     isConfigureMode = isConfigureMode,
+                                    isDraggingActive = draggingContactId != null,
                                     preferredCallingMode = preferredMode,
-                                    canMoveUpRow = index >= 2,
-                                    canMoveDownRow = index + 2 < localFavorites.size,
-                                    canMoveLeftCol = index > 0,
-                                    canMoveRightCol = index < localFavorites.size - 1,
+                                    canMoveUpRow = index >= columnsCount,
+                                    canMoveDownRow = index + columnsCount < localFavorites.size,
+                                    canMoveLeftCol = index % columnsCount > 0,
+                                    canMoveRightCol = (index % columnsCount < columnsCount - 1) && (index + 1 < localFavorites.size),
                                     onMoveUpRow = {
                                         val next = localFavorites.toMutableList()
-                                        Collections.swap(next, index, index - 2)
+                                        Collections.swap(next, index, index - columnsCount)
                                         localFavorites = next
                                         onReorderFavorites(next)
                                     },
                                     onMoveDownRow = {
                                         val next = localFavorites.toMutableList()
-                                        Collections.swap(next, index, index + 2)
+                                        Collections.swap(next, index, index + columnsCount)
                                         localFavorites = next
                                         onReorderFavorites(next)
                                     },
@@ -696,33 +812,72 @@ fun FavoritesScreen(
                                         onReorderFavorites(next)
                                     },
                                     onDragStart = {
-                                        draggingContactId = contact.id
-                                        dragStartAnchorRect = activeItemBounds[contact.id]
-                                        totalTouchOffset = Offset.Zero
+                                        val itemInfo = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == contact.id }
+                                        if (itemInfo != null) {
+                                            draggingContactId = contact.id
+                                            dragStartOffset = Offset(itemInfo.offset.x.toFloat(), itemInfo.offset.y.toFloat())
+                                            dragTotalOffset = Offset.Zero
+                                            dragItemSize = itemInfo.size
+                                            try {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            } catch (_: Exception) {}
+                                        }
                                     },
                                     onDragEnd = {
-                                        draggingContactId = null
-                                        dragStartAnchorRect = null
-                                        totalTouchOffset = Offset.Zero
-                                        onReorderFavorites(localFavorites)
+                                        if (draggingContactId != null) {
+                                            draggingContactId = null
+                                            dragTotalOffset = Offset.Zero
+                                            dragItemSize = IntSize.Zero
+                                            onReorderFavorites(localFavorites)
+                                        }
                                     },
                                     onDragDelta = { delta ->
-                                        totalTouchOffset += delta
-                                        val anchor = dragStartAnchorRect ?: return@FavoriteGridCard
-                                        val touchCenter = anchor.center + totalTouchOffset
+                                        dragTotalOffset += delta
+                                        val currentX = dragStartOffset.x + dragTotalOffset.x
+                                        val currentY = dragStartOffset.y + dragTotalOffset.y
+                                        val currentCenter = Offset(
+                                            currentX + dragItemSize.width / 2f,
+                                            currentY + dragItemSize.height / 2f
+                                        )
 
-                                        val targetContact = localFavorites.firstOrNull { c ->
-                                            c.id != contact.id && activeItemBounds[c.id]?.contains(touchCenter) == true
+                                        // Auto-scroll when near top or bottom
+                                        val viewportHeight = gridState.layoutInfo.viewportSize.height
+                                        if (viewportHeight > 0) {
+                                            val scrollZone = 100f
+                                            if (currentY < scrollZone && gridState.canScrollBackward) {
+                                                val speed = -((scrollZone - currentY) / 4f).coerceIn(4f, 25f)
+                                                coroutineScope.launch { gridState.scrollBy(speed) }
+                                                dragStartOffset -= Offset(0f, speed)
+                                            } else if (currentY + dragItemSize.height > viewportHeight - scrollZone && gridState.canScrollForward) {
+                                                val diff = (currentY + dragItemSize.height) - (viewportHeight - scrollZone)
+                                                val speed = (diff / 4f).coerceIn(4f, 25f)
+                                                coroutineScope.launch { gridState.scrollBy(speed) }
+                                                dragStartOffset -= Offset(0f, speed)
+                                            }
                                         }
 
-                                        if (targetContact != null) {
-                                            val currentIdx = localFavorites.indexOfFirst { it.id == contact.id }
-                                            val targetIdx = localFavorites.indexOfFirst { it.id == targetContact.id }
+                                        // Find if hovered over another favorite item
+                                        val targetItem = gridState.layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                                            val key = info.key
+                                            if (key !is Long || key == draggingContactId) return@firstOrNull false
+                                            val left = info.offset.x.toFloat()
+                                            val top = info.offset.y.toFloat()
+                                            val right = left + info.size.width
+                                            val bottom = top + info.size.height
+                                            currentCenter.x in left..right && currentCenter.y in top..bottom
+                                        }
 
-                                            if (currentIdx >= 0 && targetIdx >= 0 && currentIdx != targetIdx) {
+                                        if (targetItem != null) {
+                                            val fromIdx = localFavorites.indexOfFirst { it.id == draggingContactId }
+                                            val toIdx = localFavorites.indexOfFirst { it.id == targetItem.key }
+                                            if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
                                                 val next = localFavorites.toMutableList()
-                                                Collections.swap(next, currentIdx, targetIdx)
+                                                val item = next.removeAt(fromIdx)
+                                                next.add(toIdx, item)
                                                 localFavorites = next
+                                                try {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                } catch (_: Exception) {}
                                             }
                                         }
                                     },
@@ -918,29 +1073,31 @@ fun FavoritesScreen(
                     }
                 }
 
-                // Floating Dragged Card Overlay (Renders ON TOP of all grid items with 0% chance of going under)
-                if (draggingContactId != null && dragStartAnchorRect != null) {
+                // Floating Dragged Card Overlay (Renders ON TOP of all grid items)
+                if (draggingContactId != null && dragItemSize.width > 0) {
                     val dragContact = localFavorites.firstOrNull { it.id == draggingContactId }
-                    val anchor = dragStartAnchorRect!!
                     if (dragContact != null) {
                         val density = LocalDensity.current
                         Box(
                             modifier = Modifier
-                                .zIndex(10000f)
+                                .zIndex(9999f)
                                 .graphicsLayer {
-                                    translationX = anchor.left + totalTouchOffset.x
-                                    translationY = anchor.top + totalTouchOffset.y
-                                    scaleX = 1.08f
-                                    scaleY = 1.08f
+                                    translationX = dragStartOffset.x + dragTotalOffset.x
+                                    translationY = dragStartOffset.y + dragTotalOffset.y
+                                    scaleX = 1.05f
+                                    scaleY = 1.05f
+                                    shadowElevation = 24f
                                 }
-                                .width(with(density) { anchor.width.toDp() })
-                                .height(with(density) { anchor.height.toDp() })
+                                .width(with(density) { dragItemSize.width.toDp() })
+                                .height(with(density) { dragItemSize.height.toDp() })
                         ) {
                             FavoriteGridCard(
                                 contact = dragContact,
+                                cardDesign = cardDesign,
                                 isCompact = isCompact,
-                                isConfigureMode = true,
+                                isConfigureMode = isConfigureMode,
                                 isFloatingOverlay = true,
+                                isDraggingActive = true,
                                 preferredCallingMode = getPreferredCallingMode(dragContact.phoneNumber),
                                 onCall = {},
                                 onSelect = {},
@@ -1143,9 +1300,11 @@ fun FavoritesScreen(
 @Composable
 private fun FavoriteGridCard(
     contact: FavoriteContact,
+    cardDesign: FavCardDesign = FavCardDesign.MODERN_BENTO,
     isCompact: Boolean,
     isConfigureMode: Boolean = false,
     isFloatingOverlay: Boolean = false,
+    isDraggingActive: Boolean = false,
     preferredCallingMode: String = "cellular",
     canMoveUpRow: Boolean = false,
     canMoveDownRow: Boolean = false,
@@ -1168,15 +1327,19 @@ private fun FavoriteGridCard(
     modifier: Modifier = Modifier
 ) {
     val shadowElevation by animateDpAsState(
-        targetValue = if (isFloatingOverlay) 16.dp else 2.dp,
+        targetValue = if (isFloatingOverlay) 16.dp else when (cardDesign) {
+            FavCardDesign.MODERN_BENTO -> 1.dp
+            FavCardDesign.QUICK_ACTION -> 2.dp
+            FavCardDesign.MATERIAL_YOU -> 0.dp
+        },
         label = "drag_shadow"
     )
 
-    val cardModifier = if (isConfigureMode && !isFloatingOverlay) {
+    val cardModifier = if (!isFloatingOverlay) {
         modifier
             .fillMaxWidth()
-            .pointerInput(isConfigureMode) {
-                detectDragGestures(
+            .pointerInput(contact.id) {
+                detectDragGesturesAfterLongPress(
                     onDragStart = { onDragStart() },
                     onDragEnd = { onDragEnd() },
                     onDragCancel = { onDragEnd() },
@@ -1186,130 +1349,149 @@ private fun FavoriteGridCard(
                     }
                 )
             }
-    } else if (!isConfigureMode) {
-        modifier
-            .fillMaxWidth()
             .combinedClickable(
                 onClick = { onLongClick() },
-                onLongClick = { onLongClick() }
+                onLongClick = { onDragStart() }
             )
     } else {
         modifier.fillMaxWidth()
     }
 
+    val cardShape = when (cardDesign) {
+        FavCardDesign.MODERN_BENTO -> RoundedCornerShape(18.dp)
+        FavCardDesign.QUICK_ACTION -> RoundedCornerShape(14.dp)
+        FavCardDesign.MATERIAL_YOU -> RoundedCornerShape(22.dp)
+    }
+
+    val cardBorder = if (cardDesign == FavCardDesign.MATERIAL_YOU && !isFloatingOverlay) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+    } else if (cardDesign == FavCardDesign.MODERN_BENTO && !isFloatingOverlay) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    } else {
+        null
+    }
+
+    val cardContainerColor = if (isFloatingOverlay) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
+    } else if (isConfigureMode) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+    } else {
+        when (cardDesign) {
+            FavCardDesign.MODERN_BENTO -> MaterialTheme.colorScheme.surface
+            FavCardDesign.QUICK_ACTION -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            FavCardDesign.MATERIAL_YOU -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+        }
+    }
+
     Card(
         modifier = cardModifier.testTag("fav_grid_card_${contact.phoneNumber}"),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFloatingOverlay) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
-            } else if (isConfigureMode) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-            }
-        ),
+        colors = CardDefaults.cardColors(containerColor = cardContainerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = shadowElevation),
-        shape = RoundedCornerShape(12.dp)
+        shape = cardShape,
+        border = cardBorder
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Main Top Row: Avatar + Name & Label + #number Badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Avatar circle
-                Surface(
-                    shape = CircleShape,
-                    color = Color(contact.avatarColor),
-                    modifier = Modifier.size(38.dp)
+                // Main Top Row: Avatar + Name & Label + #number Badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!contact.photoUri.isNullOrBlank()) {
-                        AsyncImage(
-                            model = contact.photoUri,
-                            contentDescription = contact.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                    // Avatar
+                    val avatarShape = when (cardDesign) {
+                        FavCardDesign.MODERN_BENTO -> RoundedCornerShape(12.dp)
+                        FavCardDesign.QUICK_ACTION -> CircleShape
+                        FavCardDesign.MATERIAL_YOU -> RoundedCornerShape(14.dp)
+                    }
+                    val avatarSize = if (cardDesign == FavCardDesign.MODERN_BENTO) 42.dp else 38.dp
+
+                    Surface(
+                        shape = avatarShape,
+                        color = Color(contact.avatarColor),
+                        modifier = Modifier.size(avatarSize)
+                    ) {
+                        if (!contact.photoUri.isNullOrBlank()) {
+                            AsyncImage(
+                                model = contact.photoUri,
+                                contentDescription = contact.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                val initialChar = (contact.nickname?.takeIf { it.isNotBlank() } ?: contact.name).take(1).uppercase()
+                                Text(
+                                    text = initialChar,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Name, Phone Number & Label
+                    Column(modifier = Modifier.weight(1f)) {
+                        val displayName = if (!contact.nickname.isNullOrBlank()) contact.nickname else contact.name
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
-                            val initialChar = (contact.nickname?.takeIf { it.isNotBlank() } ?: contact.name).take(1).uppercase()
+                        Text(
+                            text = contact.phoneNumber,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (contact.label.isNotBlank()) {
                             Text(
-                                text = initialChar,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                                text = contact.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Speed Dial #slot Badge (#number instead of Key #number)
+                    if (contact.speedDialSlot != null && !isConfigureMode) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "#${contact.speedDialSlot}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Name, Phone Number & Label
-                Column(modifier = Modifier.weight(1f)) {
-                    val displayName = if (!contact.nickname.isNullOrBlank()) contact.nickname else contact.name
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = contact.phoneNumber,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (contact.label.isNotBlank()) {
-                        Text(
-                            text = contact.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                // Speed Dial #slot Badge (#number instead of Key #number)
-                if (contact.speedDialSlot != null && !isConfigureMode) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "#${contact.speedDialSlot}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            // Bottom Action Row
-            if (isConfigureMode) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Left Side: Speed Slot & Edit/Delete Actions
+                // Bottom Action Row
+                if (isConfigureMode) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
                             onClick = onSpeedDialClick,
@@ -1326,6 +1508,8 @@ private fun FavoriteGridCard(
                                 softWrap = false
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(4.dp))
 
                         IconButton(
                             onClick = onEdit,
@@ -1349,115 +1533,253 @@ private fun FavoriteGridCard(
                                 modifier = Modifier.size(15.dp)
                             )
                         }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Dedicated Drag Handle in Configure Mode
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .size(28.dp)
+                                .pointerInput(contact.id) {
+                                    detectDragGestures(
+                                        onDragStart = { onDragStart() },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            onDragDelta(dragAmount)
+                                        },
+                                        onDragEnd = { onDragEnd() },
+                                        onDragCancel = { onDragEnd() }
+                                    )
+                                }
+                                .testTag("fav_drag_handle_${contact.id}")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.DragHandle,
+                                    contentDescription = "Drag to reorder",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                     }
-
-                    // Right Side: High-Accessibility Directional Reorder Controls (▲ ▼ ◄ ►) right under thumb
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Surface(
-                            onClick = onMoveUpRow,
-                            enabled = canMoveUpRow,
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (canMoveUpRow) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(34.dp).testTag("fav_move_up_${contact.id}")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Move Up Row",
-                                    tint = if (canMoveUpRow) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                } else {
+                    // Normal Mode: Action area tailored to selected design
+                    when (cardDesign) {
+                        FavCardDesign.MODERN_BENTO -> {
+                            // Bento Pill: Full-width touch friendly pill button
+                            Surface(
+                                onClick = onCall,
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (preferredCallingMode == "whatsapp") Color(0xFF25D366).copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(28.dp)
+                                    .testTag("fav_call_btn_${contact.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (preferredCallingMode == "whatsapp") {
+                                        WhatsAppIcon(modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "WhatsApp",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF1E7E34)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Call,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Direct Call",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
                             }
                         }
-
-                        Surface(
-                            onClick = onMoveDownRow,
-                            enabled = canMoveDownRow,
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (canMoveDownRow) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(34.dp).testTag("fav_move_down_${contact.id}")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Move Down Row",
-                                    tint = if (canMoveDownRow) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                        FavCardDesign.QUICK_ACTION -> {
+                            // Quick-Action Tile: Prominent round call action button
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (preferredCallingMode == "whatsapp") {
+                                    FilledIconButton(
+                                        onClick = onCall,
+                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = Color(0xFF25D366),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        WhatsAppIcon(modifier = Modifier.size(16.dp))
+                                    }
+                                } else {
+                                    FilledIconButton(
+                                        onClick = onCall,
+                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = Color(0xFF16A34A),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Call,
+                                            contentDescription = "Call ${contact.name}",
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
-
-                        Surface(
-                            onClick = onMoveLeftCol,
-                            enabled = canMoveLeftCol,
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (canMoveLeftCol) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(34.dp).testTag("fav_move_left_${contact.id}")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                    contentDescription = "Move Left Column",
-                                    tint = if (canMoveLeftCol) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-
-                        Surface(
-                            onClick = onMoveRightCol,
-                            enabled = canMoveRightCol,
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (canMoveRightCol) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(34.dp).testTag("fav_move_right_${contact.id}")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = "Move Right Column",
-                                    tint = if (canMoveRightCol) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                        FavCardDesign.MATERIAL_YOU -> {
+                            // Expressive Material You: Tonal chip button
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    onClick = onCall,
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (preferredCallingMode == "whatsapp") Color(0xFF25D366) else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .height(28.dp)
+                                        .testTag("fav_call_btn_${contact.id}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (preferredCallingMode == "whatsapp") {
+                                            WhatsAppIcon(modifier = Modifier.size(14.dp))
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Call,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = "Call",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (preferredCallingMode == "whatsapp") Color.White else MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                // Normal Mode: Clean Call button with dynamic learned calling mode icon
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (preferredCallingMode == "whatsapp") {
-                        FilledIconButton(
-                            onClick = onCall,
-                            modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color(0xFF25D366),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            WhatsAppIcon(
-                                modifier = Modifier.size(16.dp)
+            }
+
+            // Directional Reorder Arrows overlaid on the exact sides where movement is possible
+            if (isConfigureMode && !isFloatingOverlay && !isDraggingActive) {
+                // Top Arrow (Up)
+                if (canMoveUpRow) {
+                    Surface(
+                        onClick = onMoveUpRow,
+                        shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .size(width = 44.dp, height = 20.dp)
+                            .testTag("fav_move_up_${contact.id}")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Move Up Row",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                    } else {
-                        FilledIconButton(
-                            onClick = onCall,
-                            modifier = Modifier.size(28.dp).testTag("fav_call_btn_${contact.id}"),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color(0xFF16A34A),
-                                contentColor = Color.White
-                            )
-                        ) {
+                    }
+                }
+
+                // Bottom Arrow (Down)
+                if (canMoveDownRow) {
+                    Surface(
+                        onClick = onMoveDownRow,
+                        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .size(width = 44.dp, height = 20.dp)
+                            .testTag("fav_move_down_${contact.id}")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Default.Call,
-                                contentDescription = "Call ${contact.name}",
-                                modifier = Modifier.size(14.dp)
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Move Down Row",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Left Arrow (Left)
+                if (canMoveLeftCol) {
+                    Surface(
+                        onClick = onMoveLeftCol,
+                        shape = RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .size(width = 20.dp, height = 44.dp)
+                            .testTag("fav_move_left_${contact.id}")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = "Move Left Column",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Right Arrow (Right)
+                if (canMoveRightCol) {
+                    Surface(
+                        onClick = onMoveRightCol,
+                        shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(width = 20.dp, height = 44.dp)
+                            .testTag("fav_move_right_${contact.id}")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Move Right Column",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

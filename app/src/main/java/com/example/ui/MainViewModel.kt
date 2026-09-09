@@ -164,6 +164,24 @@ class MainViewModel(
         prefs.edit().putInt("default_start_tab", tabIndex).apply()
     }
 
+    // Incoming Call Answering Style ("swipe_up", "button_tap", "swipe_slider")
+    private val _callAnswerStyle = MutableStateFlow(prefs.getString("call_answer_style", "swipe_up") ?: "swipe_up")
+    val callAnswerStyle: StateFlow<String> = _callAnswerStyle.asStateFlow()
+
+    fun setCallAnswerStyle(style: String) {
+        _callAnswerStyle.value = style
+        prefs.edit().putString("call_answer_style", style).apply()
+    }
+
+    // Favorite Contact Card Style ("bento", "quick_action", "material_you")
+    private val _favoriteCardStyle = MutableStateFlow(prefs.getString("favorite_card_style", "bento") ?: "bento")
+    val favoriteCardStyle: StateFlow<String> = _favoriteCardStyle.asStateFlow()
+
+    fun setFavoriteCardStyle(style: String) {
+        _favoriteCardStyle.value = style
+        prefs.edit().putString("favorite_card_style", style).apply()
+    }
+
     fun isNumberWhitelistedNotSpam(phoneNumber: String): Boolean {
         val clean = phoneNumber.filter { it.isDigit() }.takeLast(10)
         return _notSpamWhitelist.value.any { wl ->

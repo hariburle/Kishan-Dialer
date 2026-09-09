@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.Delete
@@ -85,6 +88,8 @@ fun RulesScreen(
     favorites: List<FavoriteContact> = emptyList(),
     themeMode: String = "system",
     onSetThemeMode: (String) -> Unit = {},
+    favoriteCardStyle: String = "bento",
+    onSetFavoriteCardStyle: (String) -> Unit = {},
     whatsAppCallMode: String = "ask_learn",
     onSetWhatsAppCallMode: (String) -> Unit = {},
     onResetWhatsAppChoices: () -> Unit = {},
@@ -95,6 +100,8 @@ fun RulesScreen(
     onSetConfirmFavoritesCall: (Boolean) -> Unit = {},
     defaultStartTab: Int = 0,
     onSetDefaultStartTab: (Int) -> Unit = {},
+    callAnswerStyle: String = "swipe_up",
+    onSetCallAnswerStyle: (String) -> Unit = {},
     onToggleRule: (CallerRule) -> Unit,
     onSaveRule: (CallerRule) -> Unit,
     onDeleteRule: (CallerRule) -> Unit,
@@ -239,6 +246,268 @@ fun RulesScreen(
                         }
                     }
 
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Favorite Contact Card Style",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Customize the visual appearance and layout of contact cards in Favorites",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            val styles = listOf(
+                                Triple(
+                                    "bento",
+                                    "Bento Style",
+                                    "Modern rounded container with full-width action pill, squircle avatar, and clean outlines."
+                                ),
+                                Triple(
+                                    "quick_action",
+                                    "Quick-Action Tile",
+                                    "Compact card with prominent circular call button and traditional rounded avatar."
+                                ),
+                                Triple(
+                                    "material_you",
+                                    "Material You Expressive",
+                                    "Dynamic rounded corners with tonal outline and chip action button."
+                                )
+                            )
+
+                            styles.forEach { (styleKey, title, description) ->
+                                val isSelected = (favoriteCardStyle == styleKey)
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface,
+                                    border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSetFavoriteCardStyle(styleKey) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = { onSetFavoriteCardStyle(styleKey) },
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Text(
+                                                text = title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+
+                                        Text(
+                                            text = description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        // Realistic visual preview of the favorite contact card
+                                        Text(
+                                            text = "Sample Preview:",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+
+                                        when (styleKey) {
+                                            "bento" -> {
+                                                Card(
+                                                    shape = RoundedCornerShape(18.dp),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                color = Color(0xFF3B82F6),
+                                                                modifier = Modifier.size(40.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text("Alex Morgan", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                                                Text("+1 (555) 234-5678", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                                                Text("Mobile • Work", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.5.sp)
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = MaterialTheme.colorScheme.primaryContainer
+                                                            ) {
+                                                                Text("#1", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                                            }
+                                                        }
+                                                        Surface(
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                                            modifier = Modifier.fillMaxWidth().height(26.dp)
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                horizontalArrangement = Arrangement.Center,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
+                                                                Spacer(modifier = Modifier.width(6.dp))
+                                                                Text("Direct Call", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            "quick_action" -> {
+                                                Card(
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = CircleShape,
+                                                                color = Color(0xFF10B981),
+                                                                modifier = Modifier.size(38.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text("Alex Morgan", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                                                Text("+1 (555) 234-5678", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                                                Text("Mobile • Work", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.5.sp)
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = MaterialTheme.colorScheme.primaryContainer
+                                                            ) {
+                                                                Text("#1", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                                            }
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.End,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = CircleShape,
+                                                                color = Color(0xFF16A34A),
+                                                                modifier = Modifier.size(28.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            "material_you" -> {
+                                                Card(
+                                                    shape = RoundedCornerShape(22.dp),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(14.dp),
+                                                                color = Color(0xFF8B5CF6),
+                                                                modifier = Modifier.size(38.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text("Alex Morgan", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                                                Text("+1 (555) 234-5678", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                                                Text("Mobile • Work", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.5.sp)
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = MaterialTheme.colorScheme.primaryContainer
+                                                            ) {
+                                                                Text("#1", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                                            }
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.End,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(14.dp),
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.height(26.dp)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
+                                                                    Text("Call", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
@@ -362,6 +631,72 @@ fun RulesScreen(
                                             modifier = Modifier.size(36.dp)
                                         )
                                         Text(text = tabTitle, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Incoming Call Answering Style",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Choose the gesture or interaction style for incoming phone calls",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val answerStyles = listOf(
+                                Triple(
+                                    "swipe_up",
+                                    "Swipe Up to Answer (Google Phone style)",
+                                    "Swipe up to answer, swipe down to decline. Recommended standard to prevent accidental answering in pockets."
+                                ),
+                                Triple(
+                                    "button_tap",
+                                    "Press to Answer (Single Tap)",
+                                    "Direct one-tap buttons for Answer and Decline. Fastest and easiest for one-handed use."
+                                ),
+                                Triple(
+                                    "swipe_slider",
+                                    "Horizontal Slide to Answer (Classic Slider)",
+                                    "Slide handle to the right to answer, or slide left to decline. Classic and tactile slider interface."
+                                )
+                            )
+                            answerStyles.forEach { (style, label, desc) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSetCallAnswerStyle(style) }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = callAnswerStyle == style,
+                                        onClick = { onSetCallAnswerStyle(style) },
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = desc,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                             }

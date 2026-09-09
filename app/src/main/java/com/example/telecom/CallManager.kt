@@ -165,6 +165,7 @@ object CallManager {
                     Log.e(TAG, "Error writing carrier spam log", e)
                 }
             }
+            SpamNotificationHelper.showBlockedSpamNotification(context, number, name)
             return
         }
 
@@ -353,6 +354,13 @@ object CallManager {
         val normNum = number.filter { it.isDigit() }.takeLast(10)
         if (normNum.isBlank()) return false
         try {
+            val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            val notSpamSet = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
+            if (notSpamSet.any { it == number || (normNum.length >= 7 && it.filter { c -> c.isDigit() }.takeLast(10) == normNum) }) {
+                Log.d(TAG, "Number $number is in user Not-Spam Whitelist. Whitelisted from carrier spam filter.")
+                return true
+            }
+
             val dao = AppDatabase.getInstance(context).appDao()
             val rules = runBlocking { dao.getEnabledRules() }
             val ruleMatched = rules.any { rule ->

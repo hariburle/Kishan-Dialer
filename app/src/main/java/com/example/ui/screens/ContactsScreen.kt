@@ -616,23 +616,68 @@ fun ContactsScreen(
                         }
                     }
 
-                    groupedContacts.forEach { (initial, contactsInGroup) ->
-                        stickyHeader(key = "header_$initial") {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = initial.toString(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    if (smartSortBy == SmartContactSort.A_Z) {
+                        groupedContacts.forEach { (initial, contactsInGroup) ->
+                            stickyHeader(key = "header_$initial") {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = initial.toString(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+
+                            items(contactsInGroup, key = { it.contactId?.toString() ?: (it.name + "_" + it.phoneNumber) }) { contact ->
+                                val isFav = favorites.any { fav ->
+                                    val normF = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                    contact.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normF } ||
+                                    contact.phoneNumber.replace(Regex("[^0-9+]"), "") == normF ||
+                                    fav.name.equals(contact.name, ignoreCase = true) ||
+                                    (!contact.nickname.isNullOrBlank() && fav.name.equals(contact.nickname, ignoreCase = true))
+                                }
+
+                                ContactRowItem(
+                                    contact = contact,
+                                    searchQuery = searchQuery,
+                                    isFavorite = isFav,
+                                    onItemClick = { contactForDetailsSheet = contact },
+                                    onRequestCall = {
+                                        val normContactNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
+                                        val matchedFav = favorites.firstOrNull { f -> f.phoneNumber.replace(Regex("[^0-9+]"), "") == normContactNum }
+                                        if (contact.phoneNumbers.size > 1) {
+                                            contactForMultiCall = contact
+                                            favoriteContactForMultiCall = matchedFav
+                                        } else {
+                                            onCallNumber(contact.phoneNumber)
+                                        }
+                                    },
+                                    onCallDirect = onCallNumber,
+                                    onSelectNumber = onSelectNumber,
+                                    onSmsClick = { num ->
+                                        val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$num"))
+                                        context.startActivity(smsIntent)
+                                    },
+                                    onCreateRule = { num -> onCreateRule(num) },
+                                    onToggleFavorite = {
+                                        val favName = contact.nickname?.ifBlank { null } ?: contact.name
+                                        onToggleFavorite(favName, contact.phoneNumber, contact.label, contact.photoUri)
+                                    },
+                                    onPlaceWhatsAppCall = onPlaceWhatsAppCall,
+                                    onSyncToPhone = {
+                                        onSyncContactToPhone(contact)
+                                    },
+                                    getPreferredCallingMode = getPreferredCallingMode
                                 )
                             }
                         }
-
-                        items(contactsInGroup, key = { it.contactId?.toString() ?: (it.name + "_" + it.phoneNumber) }) { contact ->
+                    } else {
+                        items(sortedContacts, key = { it.contactId?.toString() ?: (it.name + "_" + it.phoneNumber) }) { contact ->
                             val isFav = favorites.any { fav ->
                                 val normF = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
                                 contact.phoneNumbers.any { it.number.replace(Regex("[^0-9+]"), "") == normF } ||
@@ -679,7 +724,7 @@ fun ContactsScreen(
             }
 
             // Vertical A-Z Strip on Right Side
-            if (searchQuery.isBlank() && groupedContacts.isNotEmpty()) {
+            if (searchQuery.isBlank() && groupedContacts.isNotEmpty() && smartSortBy == SmartContactSort.A_Z) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                     shape = RoundedCornerShape(12.dp),

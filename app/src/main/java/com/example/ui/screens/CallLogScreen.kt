@@ -410,8 +410,8 @@ fun CallLogScreen(
                 val filterOptions = listOf(
                     "ALL" to "All",
                     "MISSED" to "Missed",
-                    "INCOMING" to "Incoming",
-                    "OUTGOING" to "Outgoing",
+                    "INCOMING" to "In",
+                    "OUTGOING" to "Out",
                     "SPAM" to "Spam",
                     "RULES" to "Rules",
                     "NOTES" to "Notes"

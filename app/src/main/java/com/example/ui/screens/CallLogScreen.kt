@@ -113,6 +113,7 @@ fun CallLogScreen(
     onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     onDeleteCall: (RecentCall) -> Unit = {},
     onDeleteCallsForNumber: (String) -> Unit = {},
+    rules: List<com.example.data.CallerRule> = emptyList(),
     getPreferredCallingMode: (String) -> String = { "cellular" },
     onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
@@ -283,7 +284,15 @@ fun CallLogScreen(
                 "INCOMING" -> call.callType == 1
                 "OUTGOING" -> call.callType == 2
                 "SPAM" -> group.isSpam
-                "RULES" -> !call.ruleMatched.isNullOrBlank()
+                "RULES" -> {
+                    val normCallNum = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                    !call.ruleMatched.isNullOrBlank() || rules.any { rule ->
+                        if (!rule.isEnabled) return@any false
+                        val normPattern = rule.phoneNumberPattern.filter { it.isDigit() }.takeLast(10)
+                        (normPattern.isNotBlank() && normCallNum.contains(normPattern)) ||
+                        (rule.phoneNumberPattern.isNotBlank() && call.phoneNumber.contains(rule.phoneNumberPattern))
+                    }
+                }
                 "NOTES" -> !call.note.isNullOrBlank()
                 else -> true
             }

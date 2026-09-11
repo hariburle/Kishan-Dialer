@@ -563,6 +563,7 @@ fun MainAppContent(
                         recentCalls = recentCalls,
                         spamNumbers = spamNumbers,
                         favorites = favorites,
+                        rules = rules,
                         highlightNumber = highlightNumber,
                         isSpamNumber = { num -> viewModel.isSpamNumber(num) },
                         getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
@@ -633,6 +634,7 @@ fun MainAppContent(
                     )
                     3 -> ContactsScreen(
                         favorites = favorites,
+                        recentCalls = recentCalls,
                         deviceContacts = deviceContacts,
                         onRefreshContacts = { viewModel.refreshContacts() },
                         onPlaceWhatsAppCall = { num -> viewModel.placeWhatsAppCall(context, num) },

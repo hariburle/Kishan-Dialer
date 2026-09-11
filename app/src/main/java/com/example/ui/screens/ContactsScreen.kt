@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.FavoriteContact
+import com.example.data.RecentCall
 import com.example.ui.components.ContactDetailsBottomSheet
 import com.example.ui.components.ContactSaveDestination
 import com.example.ui.components.MultiNumberCallDialog
@@ -59,11 +60,19 @@ import kotlinx.coroutines.withContext
 enum class ContactSortBy { FIRST_NAME, LAST_NAME }
 enum class ContactSortOrder { ASCENDING, DESCENDING }
 enum class ContactSourceFilter { ALL, APP_ONLY, DEVICE }
+enum class SmartContactSort(val label: String, val emoji: String) {
+    A_Z("A-Z", "🅰️"),
+    RECENT("Recent", "🕒"),
+    LONG_TIME("Long Time No Talk", "🕰️"),
+    FREQUENT("Frequent", "🔥"),
+    REDISCOVER("Rediscover", "🎲")
+}
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ContactsScreen(
     favorites: List<FavoriteContact>,
+    recentCalls: List<RecentCall> = emptyList(),
     onCallNumber: (String) -> Unit,
     onSelectNumber: (String) -> Unit,
     onToggleFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit,
@@ -153,25 +162,48 @@ fun ContactsScreen(
         list
     }
 
-    // Sort contacts
-    val sortedContacts = remember(filteredContacts, sortBy, sortOrder) {
-        val sorted = filteredContacts.sortedWith(Comparator { c1, c2 ->
-            val name1 = if (sortBy == ContactSortBy.FIRST_NAME) {
-                c1.nickname?.ifBlank { null } ?: c1.name
-            } else {
-                val parts = (c1.nickname?.ifBlank { null } ?: c1.name).trim().split("\\s+".toRegex())
-                parts.lastOrNull() ?: c1.name
+    var smartSortBy by remember { mutableStateOf(SmartContactSort.A_Z) }
+
+    // Map phone numbers to recent call stats for smart sorting & discovery
+    val contactCallStats = remember(recentCalls, effectiveContacts) {
+        val lastTimestampMap = mutableMapOf<String, Long>()
+        val callCountMap = mutableMapOf<String, Int>()
+
+        recentCalls.forEach { call ->
+            val digits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            if (digits.isNotBlank()) {
+                val existingTs = lastTimestampMap[digits] ?: 0L
+                if (call.timestamp > existingTs) {
+                    lastTimestampMap[digits] = call.timestamp
+                }
+                callCountMap[digits] = (callCountMap[digits] ?: 0) + 1
             }
-            val name2 = if (sortBy == ContactSortBy.FIRST_NAME) {
-                c2.nickname?.ifBlank { null } ?: c2.name
-            } else {
-                val parts = (c2.nickname?.ifBlank { null } ?: c2.name).trim().split("\\s+".toRegex())
-                parts.lastOrNull() ?: c2.name
+        }
+        Pair(lastTimestampMap, callCountMap)
+    }
+
+    // Sort contacts dynamically based on selected Smart Sort mode
+    val sortedContacts = remember(filteredContacts, smartSortBy, contactCallStats) {
+        val (lastTsMap, countMap) = contactCallStats
+        fun getDigits(c: DeviceContact): String = c.phoneNumber.filter { it.isDigit() }.takeLast(10)
+
+        when (smartSortBy) {
+            SmartContactSort.A_Z -> {
+                filteredContacts.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             }
-            val cmp = name1.compareTo(name2, ignoreCase = true)
-            if (cmp != 0) cmp else c1.phoneNumber.compareTo(c2.phoneNumber)
-        })
-        if (sortOrder == ContactSortOrder.ASCENDING) sorted else sorted.reversed()
+            SmartContactSort.RECENT -> {
+                filteredContacts.sortedByDescending { lastTsMap[getDigits(it)] ?: 0L }
+            }
+            SmartContactSort.LONG_TIME -> {
+                filteredContacts.sortedBy { lastTsMap[getDigits(it)] ?: 0L }
+            }
+            SmartContactSort.FREQUENT -> {
+                filteredContacts.sortedByDescending { countMap[getDigits(it)] ?: 0 }
+            }
+            SmartContactSort.REDISCOVER -> {
+                filteredContacts.shuffled(java.util.Random(42))
+            }
+        }
     }
 
     // Group contacts alphabetically by initial
@@ -257,6 +289,32 @@ fun ContactsScreen(
                     imageVector = Icons.Default.PersonAdd,
                     contentDescription = "New Contact",
                     modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        // Smart Sort & Discover Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SmartContactSort.values().forEach { sortMode ->
+                val isSelected = (smartSortBy == sortMode)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { smartSortBy = sortMode },
+                    label = {
+                        Text(
+                            text = "${sortMode.emoji} ${sortMode.label}",
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    modifier = Modifier.height(28.dp)
                 )
             }
         }

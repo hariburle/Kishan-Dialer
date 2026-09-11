@@ -286,6 +286,14 @@ object CallManager {
                             )
                         )
                         lastInsertedCallId = insertedId
+
+                        if (callType == 3) {
+                            OngoingCallNotificationHelper.showMissedCallNotification(
+                                context,
+                                callInfo.phoneNumber,
+                                callInfo.displayName
+                            )
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to log recent call", e)
                     }

@@ -353,5 +353,51 @@ object OngoingCallNotificationHelper {
             Log.w(TAG, "Failed to cancel call notification", e)
         }
     }
+
+    fun showMissedCallNotification(context: Context, number: String, callerName: String?) {
+        createNotificationChannel(context)
+
+        val notificationId = (number.hashCode() and 0x7FFFFFFF) + 100
+
+        val activityIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("EXTRA_NAV_TAB", "RECENTS")
+            putExtra("EXTRA_NAV_TAB_INDEX", 1)
+            putExtra("EXTRA_HIGHLIGHT_NUMBER", number)
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            activityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val callBackIntent = Intent(Intent.ACTION_DIAL).apply {
+            data = android.net.Uri.parse("tel:${android.net.Uri.encode(number)}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val callBackPendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId + 1,
+            callBackIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val displayName = callerName?.ifBlank { null } ?: number
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Missed Call: $displayName")
+            .setContentText("$number • Tap to open Recents")
+            .setContentIntent(contentPendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
+            .addAction(android.R.drawable.ic_menu_call, "Call Back", callBackPendingIntent)
+            .build()
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.notify(notificationId, notification)
+    }
 }
 

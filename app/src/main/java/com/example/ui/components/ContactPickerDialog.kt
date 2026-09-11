@@ -160,7 +160,7 @@ fun ContactPickerDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search name or phone...") },
+                    placeholder = { Text("Search by name or number") },
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     },

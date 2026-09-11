@@ -821,62 +821,76 @@ fun DialerScreen(
             val isWaPreferred = waCallsCount > gsmCallsCount && waCallsCount > 0
             val isGsmPreferred = gsmCallsCount > waCallsCount && gsmCallsCount > 0
 
-            val waBtnSize = if (isWaPreferred) 56.dp else if (isGsmPreferred) 46.dp else 52.dp
-            val gsmBtnSize = if (isGsmPreferred) 56.dp else if (isWaPreferred) 46.dp else 52.dp
+            // Fixed 56.dp button size for both dial buttons so row height never changes and keypad keys never move
+            val dialBtnSize = 56.dp
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
                 modifier = Modifier.padding(vertical = 4.dp)
             ) {
-                // WhatsApp Voice Call Button with clear accent border highlight when preferred
+                // WhatsApp Voice Call Button with internal accent highlight when preferred
                 FilledIconButton(
                     onClick = {
                         onPlaceWhatsAppCall(number.ifBlank { "+91" })
                     },
                     modifier = Modifier
-                        .size(waBtnSize)
-                        .then(
-                            if (isWaPreferred) {
-                                Modifier
-                                    .border(2.5.dp, Color(0xFF16A34A), CircleShape)
-                                    .padding(2.5.dp)
-                            } else Modifier
-                        )
+                        .size(dialBtnSize)
                         .testTag("whatsapp_call_button"),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = if (isGsmPreferred) Color(0xFF25D366).copy(alpha = 0.85f) else Color(0xFF25D366),
                         contentColor = Color.White
                     )
                 ) {
-                    WhatsAppIcon(
-                        modifier = Modifier.size(if (isWaPreferred) 28.dp else if (isGsmPreferred) 22.dp else 25.dp)
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isWaPreferred) {
+                            // Highlight strictly WITHIN the circle of the button without changing button outer size
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(3.dp)
+                                    .border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+                            )
+                        }
+                        WhatsAppIcon(
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
 
-                // Standard SIM GSM Call Button with clear accent border highlight when preferred
+                // Standard SIM GSM Call Button with internal accent highlight when preferred
                 FilledIconButton(
                     onClick = { onPlaceCall(number, selectedCallReason) },
                     modifier = Modifier
-                        .size(gsmBtnSize)
-                        .then(
-                            if (isGsmPreferred) {
-                                Modifier
-                                    .border(2.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                                    .padding(2.5.dp)
-                            } else Modifier
-                        )
+                        .size(dialBtnSize)
                         .testTag("dialer_call_button"),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = if (isWaPreferred) Color(0xFF16A34A).copy(alpha = 0.85f) else Color(0xFF16A34A),
                         contentColor = Color.White
                     )
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Call,
-                        contentDescription = "Place Call",
-                        modifier = Modifier.size(if (isGsmPreferred) 28.dp else if (isWaPreferred) 22.dp else 25.dp)
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isGsmPreferred) {
+                            // Highlight strictly WITHIN the circle of the button without changing button outer size
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(3.dp)
+                                    .border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Place Call",
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
             }
         }

@@ -18,6 +18,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -339,8 +341,41 @@ fun MainAppContent(
     val confirmFavoritesCall by viewModel.confirmFavoritesCall.collectAsStateWithLifecycle()
     val callAnswerStyle by viewModel.callAnswerStyle.collectAsStateWithLifecycle()
     val favoriteCardStyle by viewModel.favoriteCardStyle.collectAsStateWithLifecycle()
+    val swipeToSwitchPanels by viewModel.swipeToSwitchPanels.collectAsStateWithLifecycle()
+
+    val pagerState = rememberPagerState(initialPage = selectedTab) { 5 }
+
+    LaunchedEffect(selectedTab) {
+        if (pagerState.currentPage != selectedTab) {
+            pagerState.animateScrollToPage(selectedTab)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (selectedTab != pagerState.currentPage) {
+            selectedTab = pagerState.currentPage
+        }
+    }
 
     var hasAppliedDefaultTab by remember { mutableStateOf(false) }
+    var highlightNumber by remember { mutableStateOf<String?>(null) }
+
+    val activity = context as? android.app.Activity
+    LaunchedEffect(activity?.intent) {
+        val currentIntent = activity?.intent
+        if (currentIntent != null) {
+            val navTab = currentIntent.getStringExtra("EXTRA_NAV_TAB")
+            val navTabIndex = currentIntent.getIntExtra("EXTRA_NAV_TAB_INDEX", -1)
+            val highlightNum = currentIntent.getStringExtra("EXTRA_HIGHLIGHT_NUMBER")
+            if (navTab == "RECENTS" || navTabIndex == 1) {
+                selectedTab = 1
+                if (!highlightNum.isNullOrBlank()) {
+                    highlightNumber = highlightNum
+                }
+            }
+        }
+    }
+
     LaunchedEffect(defaultStartTab) {
         if (!hasAppliedDefaultTab && initialTab == 0) {
             hasAppliedDefaultTab = true
@@ -446,7 +481,12 @@ fun MainAppContent(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                when (selectedTab) {
+                HorizontalPager(
+                    state = pagerState,
+                    userScrollEnabled = swipeToSwitchPanels,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    when (page) {
                     0 -> FavoritesScreen(
                         favorites = favorites,
                         recentCalls = recentCalls,
@@ -510,6 +550,7 @@ fun MainAppContent(
                         recentCalls = recentCalls,
                         spamNumbers = spamNumbers,
                         favorites = favorites,
+                        highlightNumber = highlightNumber,
                         isSpamNumber = { num -> viewModel.isSpamNumber(num) },
                         onCallBack = { num ->
                             viewModel.initiateCall(context, num)
@@ -632,6 +673,7 @@ fun MainAppContent(
                         onResetWhatsAppChoices = { viewModel.resetWhatsAppChoices() },
                         learnedChoicesCount = learnedCallModes.size,
                         spamNumbers = spamNumbers,
+                        onAddSpam = { num, tag -> viewModel.markAsSpam(num, tag) },
                         onRemoveSpam = { viewModel.removeSpam(it) },
                         confirmFavoritesCall = confirmFavoritesCall,
                         onSetConfirmFavoritesCall = { viewModel.setConfirmFavoritesCall(it) },
@@ -645,11 +687,12 @@ fun MainAppContent(
                         onClearLogs = { viewModel.clearLogs() },
                         initiallyShowAddRuleWithNumber = ruleNumberToCreate,
                         onConsumeAddRuleNumber = { ruleNumberToCreate = null },
-                        deviceContacts = deviceContacts
+                        deviceContacts = deviceContacts,
+                        swipeToSwitchPanels = swipeToSwitchPanels,
+                        onSetSwipeToSwitchPanels = { viewModel.setSwipeToSwitchPanels(it) }
                     )
                 }
             }
-        }
 
         // Active In-Call Overlay Screen (Appears seamlessly over UI whenever call is active/ringing)
         AnimatedVisibility(
@@ -926,6 +969,8 @@ fun MainAppContent(
             )
         }
     }
+}
+}
 }
 
 @Composable

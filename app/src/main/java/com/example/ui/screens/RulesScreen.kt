@@ -73,6 +73,7 @@ import com.example.data.CallerRule
 import com.example.data.FavoriteContact
 import com.example.data.SpamNumber
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.TouchApp
 import com.example.ui.components.ContactPickerDialog
@@ -95,11 +96,14 @@ fun RulesScreen(
     onResetWhatsAppChoices: () -> Unit = {},
     learnedChoicesCount: Int = 0,
     spamNumbers: List<SpamNumber> = emptyList(),
+    onAddSpam: (String, String) -> Unit = { _, _ -> },
     onRemoveSpam: (String) -> Unit = {},
     confirmFavoritesCall: Boolean = false,
     onSetConfirmFavoritesCall: (Boolean) -> Unit = {},
     defaultStartTab: Int = 0,
     onSetDefaultStartTab: (Int) -> Unit = {},
+    swipeToSwitchPanels: Boolean = true,
+    onSetSwipeToSwitchPanels: (Boolean) -> Unit = {},
     callAnswerStyle: String = "swipe_up",
     onSetCallAnswerStyle: (String) -> Unit = {},
     onToggleRule: (CallerRule) -> Unit,
@@ -114,6 +118,7 @@ fun RulesScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showHistoryDialog by rememberSaveable { mutableStateOf(false) }
+    var showSpamDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<CallerRule?>(null) }
 
     LaunchedEffect(initiallyShowAddRuleWithNumber) {
@@ -265,17 +270,17 @@ fun RulesScreen(
                             val styles = listOf(
                                 Triple(
                                     "bento",
-                                    "Bento Style",
+                                    "Bento",
                                     "Modern rounded container with full-width action pill, squircle avatar, and clean outlines."
                                 ),
                                 Triple(
                                     "quick_action",
-                                    "Quick-Action Tile",
+                                    "Grid",
                                     "Compact card with prominent circular call button and traditional rounded avatar."
                                 ),
                                 Triple(
                                     "material_you",
-                                    "Material You Expressive",
+                                    "Material",
                                     "Dynamic rounded corners with tonal outline and chip action button."
                                 )
                             )
@@ -388,7 +393,8 @@ fun RulesScreen(
                                             "quick_action" -> {
                                                 Card(
                                                     shape = RoundedCornerShape(14.dp),
-                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                                                     modifier = Modifier.fillMaxWidth()
                                                 ) {
@@ -443,7 +449,7 @@ fun RulesScreen(
                                             "material_you" -> {
                                                 Card(
                                                     shape = RoundedCornerShape(22.dp),
-                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
                                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)),
                                                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                                     modifier = Modifier.fillMaxWidth()
@@ -525,7 +531,7 @@ fun RulesScreen(
                             val options = listOf(
                                 Triple("ask_learn", "Ask & Learn", "Prompts once per contact and memorizes choice"),
                                 Triple("ask_always", "Ask Always", "Always shows Cellular vs WhatsApp choice on call"),
-                                Triple("all_international", "All International Numbers", "Directs international (+91, etc.) numbers to WhatsApp"),
+                                Triple("all_international", "International Numbers", "Directs numbers outside your country (+1 for US, +91 for India, etc.) to WhatsApp automatically."),
                                 Triple("never", "Never", "Default standard cellular calls only")
                             )
                             options.forEach { (mode, label, desc) ->
@@ -602,6 +608,32 @@ fun RulesScreen(
 
                             HorizontalDivider()
 
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Swipe to switch panels",
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "Swipe horizontally across main screens (Favorites <-> Recents <-> Keypad <-> Contacts <-> Settings)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = swipeToSwitchPanels,
+                                    onCheckedChange = onSetSwipeToSwitchPanels,
+                                    modifier = Modifier.testTag("swipe_to_switch_panels_switch")
+                                )
+                            }
+
+                            HorizontalDivider()
+
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(text = "Default Startup Screen", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                                 Text(
@@ -611,8 +643,8 @@ fun RulesScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 val tabs = listOf(
-                                    0 to "Favorites",
-                                    1 to "Call Log",
+                                    0 to "Favorites (Default)",
+                                    1 to "Recents",
                                     2 to "Keypad Dialer",
                                     3 to "Contacts"
                                 )
@@ -703,100 +735,88 @@ fun RulesScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Spam & Blocked Numbers (${spamNumbers.size})",
+                        text = "Protection & Spam",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "Review numbers flagged as spam. You can unmark or remove numbers from the spam filter at any time.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
 
-                            if (spamNumbers.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showSpamDialog = true }
+                            .testTag("entry_spam_management")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(40.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
+                                    Box(contentAlignment = Alignment.Center) {
                                         Icon(
                                             imageVector = Icons.Default.Shield,
                                             contentDescription = null,
-                                            tint = Color(0xFF16A34A),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Text(
-                                            text = "No spam numbers registered. Your spam filter list is clear.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                 }
-                            } else {
-                                spamNumbers.forEach { item ->
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surface,
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
+                                        Text(
+                                            text = "Spam & Blocked Calls",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (spamNumbers.isNotEmpty()) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
                                         ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Block,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                                Column {
-                                                    Text(
-                                                        text = item.phoneNumber,
-                                                        fontWeight = FontWeight.Bold,
-                                                        style = MaterialTheme.typography.bodyMedium
-                                                    )
-                                                    Text(
-                                                        text = item.label.ifBlank { "Marked Spam" },
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.error
-                                                    )
-                                                }
-                                            }
-                                            TextButton(
-                                                onClick = { onRemoveSpam(item.phoneNumber) },
-                                                modifier = Modifier.testTag("unmark_spam_${item.phoneNumber}")
-                                            ) {
-                                                Text(
-                                                    text = "Unmark (Not Spam)",
-                                                    fontSize = 12.sp,
-                                                    color = Color(0xFF16A34A),
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                            Text(
+                                                text = "${spamNumbers.size} blocked",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (spamNumbers.isNotEmpty()) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
                                         }
                                     }
+                                    Text(
+                                        text = "Manage blocked numbers, community spam rules & auto-rejection",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Open Spam Manager",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
 
@@ -922,6 +942,15 @@ fun RulesScreen(
                 editingRule = null
                 onConsumeAddRuleNumber()
             }
+        )
+    }
+
+    if (showSpamDialog) {
+        com.example.ui.components.SpamManagementDialog(
+            spamNumbers = spamNumbers,
+            onAddSpam = onAddSpam,
+            onRemoveSpam = onRemoveSpam,
+            onDismiss = { showSpamDialog = false }
         )
     }
 }

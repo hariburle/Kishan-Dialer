@@ -155,8 +155,8 @@ class MainViewModel(
         prefs.edit().putBoolean("confirm_fav_calls", enabled).apply()
     }
 
-    // Default start tab: 2 (Keypad) to prevent accidental calls when opening app
-    private val _defaultStartTab = MutableStateFlow(prefs.getInt("default_start_tab", 2))
+    // Default start tab: 0 (Favorites)
+    private val _defaultStartTab = MutableStateFlow(prefs.getInt("default_start_tab", 0))
     val defaultStartTab: StateFlow<Int> = _defaultStartTab.asStateFlow()
 
     fun setDefaultStartTab(tabIndex: Int) {
@@ -164,8 +164,8 @@ class MainViewModel(
         prefs.edit().putInt("default_start_tab", tabIndex).apply()
     }
 
-    // Incoming Call Answering Style ("swipe_up", "button_tap", "swipe_slider")
-    private val _callAnswerStyle = MutableStateFlow(prefs.getString("call_answer_style", "swipe_up") ?: "swipe_up")
+    // Incoming Call Answering Style ("horizontal_slide", "swipe_up", "button_tap")
+    private val _callAnswerStyle = MutableStateFlow(prefs.getString("call_answer_style", "horizontal_slide") ?: "horizontal_slide")
     val callAnswerStyle: StateFlow<String> = _callAnswerStyle.asStateFlow()
 
     fun setCallAnswerStyle(style: String) {
@@ -180,6 +180,15 @@ class MainViewModel(
     fun setFavoriteCardStyle(style: String) {
         _favoriteCardStyle.value = style
         prefs.edit().putString("favorite_card_style", style).apply()
+    }
+
+    // Swipe to Switch Main Panels setting (Default: true)
+    private val _swipeToSwitchPanels = MutableStateFlow(prefs.getBoolean("swipe_to_switch_panels", true))
+    val swipeToSwitchPanels: StateFlow<Boolean> = _swipeToSwitchPanels.asStateFlow()
+
+    fun setSwipeToSwitchPanels(enabled: Boolean) {
+        _swipeToSwitchPanels.value = enabled
+        prefs.edit().putBoolean("swipe_to_switch_panels", enabled).apply()
     }
 
     fun isNumberWhitelistedNotSpam(phoneNumber: String): Boolean {
@@ -337,6 +346,15 @@ class MainViewModel(
                 roomCalls.forEach { roomCall ->
                     if (!handledRoomIds.contains(roomCall.id)) {
                         merged.add(roomCall)
+                    }
+                }
+
+                // Fresh install seed: if Room database was empty, seed Room with system call history
+                if (roomCalls.isEmpty() && systemCalls.isNotEmpty()) {
+                    systemCalls.take(50).forEach { sysCall ->
+                        try {
+                            repository.insertRecentCall(sysCall.copy(id = 0L))
+                        } catch (_: Exception) {}
                     }
                 }
 
@@ -693,6 +711,7 @@ class MainViewModel(
                     callReason = "WhatsApp Call"
                 )
             )
+            refreshRecentCalls()
         }
     }
 
@@ -1152,33 +1171,11 @@ class MainViewModel(
 
     fun deleteFavorite(contact: FavoriteContact) {
         viewModelScope.launch(Dispatchers.IO) {
-            val (isAppOnly, isStarredInPhone) = getContactInfoForConfirmation(contact.phoneNumber, contact.name)
-            if (isAppOnly || !isStarredInPhone) {
-                // Remove from app favorites directly without asking about Phone Contacts
-                repository.deleteFavorite(contact)
-            } else {
-                _pendingCloudConfirmation.value = CloudContactConfirmation(
-                    title = "Remove '${contact.name}' from Favorites?",
-                    message = "Do you want to remove '${contact.name}' from your favorites?\n\nWould you like to also unfavorite/unstar this contact in your Phone Contacts, or only remove it from this app?",
-                    contactName = contact.name,
-                    confirmButtonText = "Remove & Unstar in Phone Contacts",
-                    secondaryButtonText = "Remove from App Only",
-                    dismissButtonText = "Cancel",
-                    onConfirmCloudAction = {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            ContactHelper.setContactStarred(appContext, contact.phoneNumber, false)
-                            repository.deleteFavorite(contact)
-                        }
-                    },
-                    onSecondaryAction = {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            repository.deleteFavorite(contact)
-                        }
-                    },
-                    onDismissOrCancel = {
-                        // Cancelled, do not remove
-                    }
-                )
+            repository.deleteFavorite(contact)
+            try {
+                ContactHelper.setContactStarred(appContext, contact.phoneNumber, false)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }

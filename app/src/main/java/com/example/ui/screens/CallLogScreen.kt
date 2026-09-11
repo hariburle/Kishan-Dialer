@@ -79,6 +79,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AssistChipDefaults
 import com.example.data.FavoriteContact
 import com.example.data.SpamNumber
+import com.example.ui.components.ContactSaveDestination
+import com.example.ui.components.CreateContactDialog
 
 data class GroupedCallLog(
     val primaryCall: RecentCall,
@@ -92,6 +94,7 @@ fun CallLogScreen(
     recentCalls: List<RecentCall>,
     spamNumbers: List<SpamNumber> = emptyList(),
     favorites: List<FavoriteContact> = emptyList(),
+    highlightNumber: String? = null,
     isSpamNumber: ((String) -> Boolean)? = null,
     onCallBack: (String) -> Unit,
     onCreateRuleForNumber: (String) -> Unit,
@@ -255,6 +258,21 @@ fun CallLogScreen(
         groups
     }
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    androidx.compose.runtime.LaunchedEffect(highlightNumber, groupedCalls) {
+        if (!highlightNumber.isNullOrBlank() && groupedCalls.isNotEmpty()) {
+            val targetDigits = highlightNumber.filter { it.isDigit() }.takeLast(10)
+            val index = groupedCalls.indexOfFirst {
+                val callDigits = it.primaryCall.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
+                callDigits == targetDigits || it.primaryCall.phoneNumber == highlightNumber
+            }
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+            }
+        }
+    }
+
     if (recentCalls.isEmpty()) {
         Box(
             modifier = modifier
@@ -287,6 +305,7 @@ fun CallLogScreen(
         }
     } else {
         LazyColumn(
+            state = listState,
             modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -303,6 +322,7 @@ fun CallLogScreen(
                 CallLogItem(
                     group = group,
                     isFavorite = isFav,
+                    highlightNumber = highlightNumber,
                     onCallBack = { onCallBack(group.primaryCall.phoneNumber) },
                     onCreateRule = { onCreateRuleForNumber(group.primaryCall.phoneNumber) },
                     onOpenNoteDialog = { target ->
@@ -356,6 +376,7 @@ fun CallLogScreen(
 private fun CallLogItem(
     group: GroupedCallLog,
     isFavorite: Boolean,
+    highlightNumber: String? = null,
     onCallBack: () -> Unit,
     onCreateRule: () -> Unit,
     onOpenNoteDialog: (RecentCall) -> Unit,
@@ -375,18 +396,30 @@ private fun CallLogItem(
     val timeFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
     val formattedTime = timeFormat.format(Date(call.timestamp))
 
+    val isHighlighted = remember(highlightNumber, call.phoneNumber) {
+        if (highlightNumber.isNullOrBlank()) false
+        else {
+            val targetDigits = highlightNumber.filter { it.isDigit() }.takeLast(10)
+            val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            callDigits == targetDigits || call.phoneNumber == highlightNumber
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpenDetails() }
             .testTag("call_item_${call.id}"),
         colors = CardDefaults.cardColors(
-            containerColor = if (group.isSpam) {
+            containerColor = if (isHighlighted) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            } else if (group.isSpam) {
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
             } else {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             }
         ),
+        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(

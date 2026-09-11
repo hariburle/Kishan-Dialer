@@ -213,7 +213,7 @@ fun ContactsScreen(
                 modifier = Modifier
                     .weight(1f)
                     .testTag("contacts_search_input"),
-                placeholder = { Text("Search by name or number...") },
+                placeholder = { Text("Search by name or number") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,

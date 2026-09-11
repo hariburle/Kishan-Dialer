@@ -29,6 +29,7 @@ import com.example.telecom.RoleHelper
 import com.example.telecom.SimHelper
 import com.example.telecom.SimInfo
 import com.example.util.ContactHelper
+import com.example.util.ContactPhoneNumber
 import com.example.util.DeviceContact
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -347,6 +348,7 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+
                 val roomCalls = repository.getAllRecentCallsList()
                 val systemCalls = ContactHelper.fetchDeviceCallHistory(appContext, limit = 100)
 
@@ -357,9 +359,20 @@ class MainViewModel(
                     val sysNorm = normDigits(sysCall.phoneNumber)
                     val matchingRoomCall = roomCalls.firstOrNull { roomCall ->
                         val roomNorm = normDigits(roomCall.phoneNumber)
-                        val numMatches = (sysNorm.isNotBlank() && roomNorm == sysNorm)
-                        val timeMatches = Math.abs(roomCall.timestamp - sysCall.timestamp) < 5000L
-                        numMatches && timeMatches
+                        val numMatches = if (sysNorm.isNotBlank() && roomNorm.isNotBlank()) {
+                            sysNorm == roomNorm
+                        } else {
+                            roomCall.phoneNumber.equals(sysCall.phoneNumber, ignoreCase = true)
+                        }
+                        if (!numMatches) return@firstOrNull false
+
+                        // Check time window: Account for system CallLog storing call start time while in-app logger might record disconnect time
+                        val maxDurMs = Math.max(roomCall.durationSeconds, sysCall.durationSeconds) * 1000L
+                        val rawDiff = Math.abs(roomCall.timestamp - sysCall.timestamp)
+                        val startTimeDiff = Math.abs((roomCall.timestamp - roomCall.durationSeconds * 1000L) - sysCall.timestamp)
+                        val endTimeDiff = Math.abs(roomCall.timestamp - (sysCall.timestamp + sysCall.durationSeconds * 1000L))
+
+                        rawDiff <= (maxDurMs + 25000L) || startTimeDiff < 25000L || endTimeDiff < 25000L
                     }
 
                     if (matchingRoomCall != null) {
@@ -367,7 +380,9 @@ class MainViewModel(
                         merged.add(
                             matchingRoomCall.copy(
                                 durationSeconds = if (matchingRoomCall.durationSeconds > 0) matchingRoomCall.durationSeconds else sysCall.durationSeconds,
-                                callerName = matchingRoomCall.callerName ?: sysCall.callerName
+                                callerName = matchingRoomCall.callerName ?: sysCall.callerName,
+                                photoUri = matchingRoomCall.photoUri ?: sysCall.photoUri,
+                                timestamp = Math.max(matchingRoomCall.timestamp, sysCall.timestamp)
                             )
                         )
                     } else {
@@ -381,6 +396,40 @@ class MainViewModel(
                     }
                 }
 
+                // Deduplication pass across merged calls (eliminates any remaining close duplicate records)
+                merged.sortByDescending { it.timestamp }
+                val deduplicated = mutableListOf<RecentCall>()
+                for (call in merged) {
+                    val callNorm = normDigits(call.phoneNumber)
+                    val existingIdx = deduplicated.indexOfFirst { prev ->
+                        val prevNorm = normDigits(prev.phoneNumber)
+                        val numMatch = if (callNorm.isNotBlank() && prevNorm.isNotBlank()) callNorm == prevNorm else call.phoneNumber.equals(prev.phoneNumber, ignoreCase = true)
+                        val typeMatch = prev.callType == call.callType || (prev.callType in listOf(1, 3) && call.callType in listOf(1, 3))
+                        val timeGap = Math.abs(prev.timestamp - call.timestamp)
+                        val maxDur = Math.max(prev.durationSeconds, call.durationSeconds) * 1000L
+                        numMatch && typeMatch && (timeGap <= (maxDur + 25000L))
+                    }
+
+                    if (existingIdx != -1) {
+                        // Merge richer information into existing entry
+                        val prev = deduplicated[existingIdx]
+                        val enriched = prev.copy(
+                            callerName = prev.callerName ?: call.callerName,
+                            photoUri = prev.photoUri ?: call.photoUri,
+                            durationSeconds = Math.max(prev.durationSeconds, call.durationSeconds),
+                            note = prev.note ?: call.note,
+                            reminderTime = prev.reminderTime ?: call.reminderTime,
+                            ruleMatched = prev.ruleMatched ?: call.ruleMatched,
+                            callReason = prev.callReason ?: call.callReason,
+                            communityTag = prev.communityTag ?: call.communityTag,
+                            isSpam = prev.isSpam || call.isSpam
+                        )
+                        deduplicated[existingIdx] = enriched
+                    } else {
+                        deduplicated.add(call)
+                    }
+                }
+
                 // Fresh install seed: if Room database was empty, seed Room with system call history
                 if (roomCalls.isEmpty() && systemCalls.isNotEmpty()) {
                     systemCalls.take(50).forEach { sysCall ->
@@ -390,8 +439,7 @@ class MainViewModel(
                     }
                 }
 
-                merged.sortByDescending { it.timestamp }
-                _combinedRecentCalls.value = merged
+                _combinedRecentCalls.value = deduplicated
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -402,6 +450,7 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+                fun normName(n: String): String = n.trim().lowercase()
 
                 val deviceList = ContactHelper.fetchDeviceContacts(appContext)
                 val localList = repository.getAllLocalContactsList()
@@ -409,7 +458,25 @@ class MainViewModel(
 
                 val favDigits = currentFavs.map { normDigits(it.phoneNumber) }.filter { it.isNotEmpty() }.toSet()
 
-                val localAsDeviceContacts = localList.map { lc ->
+                // Collect all phone numbers & names in device contacts
+                val deviceNumbers = deviceList.flatMap { dc ->
+                    dc.phoneNumbers.map { normDigits(it.number) } + listOf(normDigits(dc.phoneNumber))
+                }.filter { it.isNotBlank() }.toSet()
+                val deviceNames = deviceList.map { normName(it.name) }.toSet()
+
+                // Clean up any local contacts that were synced to phone contacts or already exist on device
+                localList.forEach { lc ->
+                    val lcDigits = normDigits(lc.phoneNumber)
+                    val lcName = normName(lc.name)
+                    if ((lcDigits.isNotBlank() && deviceNumbers.contains(lcDigits)) || (lcName.isNotBlank() && deviceNames.contains(lcName))) {
+                        repository.deleteLocalContact(lc)
+                    }
+                }
+
+                // Retrieve active local contacts after pruning synced duplicates
+                val activeLocalList = repository.getAllLocalContactsList()
+
+                val localAsDeviceContacts = activeLocalList.map { lc ->
                     val isFav = favDigits.contains(normDigits(lc.phoneNumber))
                     DeviceContact(
                         name = lc.name,
@@ -422,9 +489,13 @@ class MainViewModel(
                     )
                 }
 
-                val combined = (deviceList + localAsDeviceContacts).distinctBy {
-                    it.name.trim().lowercase() + "_" + normDigits(it.phoneNumber)
-                }
+                // Combine: device contacts take precedence, followed by app-only contacts, sorted strictly A-Z
+                val combined = (deviceList + localAsDeviceContacts)
+                    .distinctBy { dc ->
+                        val digits = normDigits(dc.phoneNumber)
+                        if (digits.isNotBlank()) digits else (normName(dc.name) + "_" + (dc.contactId ?: 0L))
+                    }
+                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
                 _deviceContacts.value = combined
                 syncWithDeviceContacts()
@@ -443,7 +514,7 @@ class MainViewModel(
                 }
             }
             appContext.contentResolver.registerContentObserver(
-                android.provider.ContactsContract.Contacts.CONTENT_URI,
+                android.provider.ContactsContract.AUTHORITY_URI,
                 true,
                 contactsObserver!!
             )
@@ -1017,23 +1088,82 @@ class MainViewModel(
         }
     }
 
-    fun createNewContact(name: String, phoneNumber: String, label: String, saveToDevice: Boolean, addToFavorites: Boolean) {
+    fun createNewContact(
+        name: String,
+        phoneNumbers: List<ContactPhoneNumber>,
+        saveToDevice: Boolean,
+        addToFavorites: Boolean
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
+            val validNumbers = phoneNumbers.filter { it.number.isNotBlank() }
+            if (validNumbers.isEmpty() || name.isBlank()) return@launch
+
             if (saveToDevice) {
-                ContactHelper.saveContactToDevice(appContext, name, phoneNumber, label)
+                ContactHelper.saveContactToDevice(appContext, name, validNumbers)
             } else {
+                validNumbers.forEach { pn ->
+                    repository.insertLocalContact(
+                        LocalContact(
+                            name = name,
+                            phoneNumber = pn.number,
+                            label = pn.label
+                        )
+                    )
+                }
+            }
+            if (addToFavorites) {
+                val primaryNum = validNumbers.first()
+                val fav = FavoriteContact(
+                    name = name,
+                    phoneNumber = primaryNum.number,
+                    label = primaryNum.label,
+                    sortOrder = 999
+                )
+                repository.insertFavorite(fav)
+            }
+            refreshContacts()
+        }
+    }
+
+    fun createNewContact(name: String, phoneNumber: String, label: String, saveToDevice: Boolean, addToFavorites: Boolean) {
+        createNewContact(name, listOf(ContactPhoneNumber(phoneNumber, label)), saveToDevice, addToFavorites)
+    }
+
+    fun addNumberToExistingContact(
+        contactId: Long?,
+        existingNumber: String?,
+        contactName: String,
+        newNumber: String,
+        label: String,
+        isAppOnly: Boolean,
+        addToFavorites: Boolean
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanNum = newNumber.trim()
+            if (cleanNum.isBlank()) return@launch
+
+            if (isAppOnly) {
                 repository.insertLocalContact(
                     LocalContact(
-                        name = name,
-                        phoneNumber = phoneNumber,
+                        name = contactName,
+                        phoneNumber = cleanNum,
                         label = label
                     )
                 )
+            } else {
+                ContactHelper.addPhoneNumberToExistingContact(
+                    context = appContext,
+                    contactId = contactId,
+                    existingNumber = existingNumber,
+                    newNumber = cleanNum,
+                    label = label
+                )
             }
+
             if (addToFavorites) {
                 val fav = FavoriteContact(
-                    name = name,
-                    phoneNumber = phoneNumber,
+                    name = contactName,
+                    phoneNumber = cleanNum,
                     label = label,
                     sortOrder = 999
                 )
@@ -1468,6 +1598,55 @@ class MainViewModel(
             prefs.edit().putStringSet("favorite_sort_orders", sortOrderSet).apply()
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    fun deleteContact(contact: DeviceContact) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+                val contactDigits = normDigits(contact.phoneNumber)
+                val allContactDigits = contact.phoneNumbers.map { normDigits(it.number) }.filter { it.isNotBlank() }.toSet()
+
+                // 1. Delete from Android System Contacts Provider if it's a device contact
+                if (contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly) {
+                    ContactHelper.deleteContactFromDevice(appContext, contact.contactId)
+                } else if (!contact.isAppOnly && contact.phoneNumber.isNotBlank()) {
+                    ContactHelper.deleteContactFromDeviceByNumber(appContext, contact.phoneNumber)
+                }
+
+                // 2. Delete from Room local_contacts (matching phone digits or matching clean name)
+                val localList = repository.getAllLocalContactsList()
+                localList.forEach { lc ->
+                    val lcDigits = normDigits(lc.phoneNumber)
+                    val isNumberMatch = (contactDigits.isNotBlank() && lcDigits == contactDigits) || (lcDigits.isNotBlank() && allContactDigits.contains(lcDigits))
+                    val isNameMatch = lc.name.trim().equals(contact.name.trim(), ignoreCase = true)
+                    if (isNumberMatch || isNameMatch) {
+                        repository.deleteLocalContact(lc)
+                    }
+                }
+                if (contact.phoneNumber.isNotBlank()) {
+                    repository.deleteLocalContactByNumber(contact.phoneNumber)
+                }
+                if (contact.name.isNotBlank()) {
+                    repository.deleteLocalContactByName(contact.name.trim())
+                }
+
+                // 3. Delete from Room FavoriteContact if present
+                val favList = repository.getAllFavoritesList()
+                favList.forEach { fav ->
+                    val favDigits = normDigits(fav.phoneNumber)
+                    val isNumberMatch = (contactDigits.isNotBlank() && favDigits == contactDigits) || (favDigits.isNotBlank() && allContactDigits.contains(favDigits))
+                    val isNameMatch = fav.name.trim().equals(contact.name.trim(), ignoreCase = true)
+                    if (isNumberMatch || isNameMatch) {
+                        repository.deleteFavorite(fav)
+                    }
+                }
+
+                refreshContacts()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

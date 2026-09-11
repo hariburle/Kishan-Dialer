@@ -48,39 +48,269 @@ object ContactHelper {
         }
     }
 
-    fun saveContactToDevice(context: Context, name: String, phoneNumber: String, label: String = "Mobile"): Boolean {
+    fun deleteContactFromDevice(context: Context, contactId: Long?): Boolean {
+        if (contactId == null || contactId <= 0) return false
         return try {
-            val ops = ArrayList<android.content.ContentProviderOperation>()
-            ops.add(
-                android.content.ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
-                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
-                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
-                    .build()
+            val uri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, contactId)
+            val rows = context.contentResolver.delete(uri, null, null)
+            rows > 0
+        } catch (e: Exception) {
+            android.util.Log.e("ContactHelper", "Failed to delete contact from device", e)
+            false
+        }
+    }
+
+    fun deleteContactFromDeviceByNumber(context: Context, phoneNumber: String): Boolean {
+        val clean = phoneNumber.filter { it.isDigit() }.takeLast(10)
+        if (clean.isBlank()) return false
+        return try {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            var deletedAny = false
+            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
+                while (cursor.moveToNext()) {
+                    val cId = if (idIdx >= 0) cursor.getLong(idIdx) else null
+                    if (cId != null && cId > 0) {
+                        val deleteUri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, cId)
+                        val count = context.contentResolver.delete(deleteUri, null, null)
+                        if (count > 0) deletedAny = true
+                    }
+                }
+            }
+            deletedAny
+        } catch (e: Exception) {
+            android.util.Log.e("ContactHelper", "Failed to delete contact by number", e)
+            false
+        }
+    }
+
+    fun getPrimaryContactsAccount(context: Context): Pair<String?, String?> {
+        try {
+            val uri = ContactsContract.RawContacts.CONTENT_URI
+            val projection = arrayOf(
+                ContactsContract.RawContacts.ACCOUNT_NAME,
+                ContactsContract.RawContacts.ACCOUNT_TYPE
             )
+            // 1. Prefer Google Account from RawContacts
+            context.contentResolver.query(
+                uri,
+                projection,
+                "${ContactsContract.RawContacts.ACCOUNT_TYPE} = ?",
+                arrayOf("com.google"),
+                null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val nameCol = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_NAME)
+                    val typeCol = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_TYPE)
+                    val name = if (nameCol >= 0) cursor.getString(nameCol) else null
+                    val type = if (typeCol >= 0) cursor.getString(typeCol) else null
+                    if (!name.isNullOrBlank() && !type.isNullOrBlank()) {
+                        return Pair(name, type)
+                    }
+                }
+            }
+
+            // 2. Check for any other non-null account in RawContacts
+            context.contentResolver.query(
+                uri,
+                projection,
+                "${ContactsContract.RawContacts.ACCOUNT_NAME} IS NOT NULL AND ${ContactsContract.RawContacts.ACCOUNT_TYPE} IS NOT NULL",
+                null,
+                null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val nameCol = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_NAME)
+                    val typeCol = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_TYPE)
+                    val name = if (nameCol >= 0) cursor.getString(nameCol) else null
+                    val type = if (typeCol >= 0) cursor.getString(typeCol) else null
+                    if (!name.isNullOrBlank() && !type.isNullOrBlank()) {
+                        return Pair(name, type)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Fallback: Query AccountManager for Google accounts
+        try {
+            val am = android.accounts.AccountManager.get(context)
+            val googleAccounts = am.getAccountsByType("com.google")
+            if (googleAccounts.isNotEmpty()) {
+                return Pair(googleAccounts[0].name, googleAccounts[0].type)
+            }
+            val allAccounts = am.accounts
+            if (allAccounts.isNotEmpty()) {
+                return Pair(allAccounts[0].name, allAccounts[0].type)
+            }
+        } catch (_: Exception) {}
+
+        return Pair(null, null)
+    }
+
+    fun saveContactToDevice(context: Context, name: String, phoneNumbers: List<ContactPhoneNumber>): Boolean {
+        return try {
+            val cleanName = name.trim()
+            val validNumbers = phoneNumbers.filter { it.number.trim().isNotBlank() }
+            if (cleanName.isBlank() || validNumbers.isEmpty()) return false
+
+            val (accountName, accountType) = getPrimaryContactsAccount(context)
+
+            val ops = ArrayList<android.content.ContentProviderOperation>()
+            val rawContactOp = android.content.ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+            if (!accountName.isNullOrBlank() && !accountType.isNullOrBlank()) {
+                rawContactOp.withValue(ContactsContract.RawContacts.ACCOUNT_NAME, accountName)
+                rawContactOp.withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, accountType)
+            } else {
+                rawContactOp.withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                rawContactOp.withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+            }
+            ops.add(rawContactOp.build())
+
             ops.add(
                 android.content.ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                     .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
                     .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
-                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, cleanName)
                     .build()
             )
+
+            for ((idx, pn) in validNumbers.withIndex()) {
+                val cleanNum = pn.number.trim()
+                val phoneType = when (pn.label.lowercase()) {
+                    "home" -> ContactsContract.CommonDataKinds.Phone.TYPE_HOME
+                    "work" -> ContactsContract.CommonDataKinds.Phone.TYPE_WORK
+                    "other" -> ContactsContract.CommonDataKinds.Phone.TYPE_OTHER
+                    else -> ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
+                }
+                val phoneOp = android.content.ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, cleanNum)
+                    .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneType)
+                if (idx == 0) {
+                    phoneOp.withValue(ContactsContract.CommonDataKinds.Phone.IS_PRIMARY, 1)
+                    phoneOp.withValue(ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY, 1)
+                }
+                ops.add(phoneOp.build())
+            }
+
+            val results = context.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
+            val success = results.isNotEmpty()
+            if (success) {
+                try {
+                    if (accountName != null && accountType != null) {
+                        val account = android.accounts.Account(accountName, accountType)
+                        android.content.ContentResolver.requestSync(
+                            account,
+                            ContactsContract.AUTHORITY,
+                            android.os.Bundle().apply {
+                                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+                            }
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+            success
+        } catch (e: Exception) {
+            android.util.Log.e("ContactHelper", "Failed to save multi-number contact to device", e)
+            false
+        }
+    }
+
+    fun saveContactToDevice(context: Context, name: String, phoneNumber: String, label: String = "Mobile"): Boolean {
+        return saveContactToDevice(context, name, listOf(ContactPhoneNumber(phoneNumber, label)))
+    }
+
+    fun addPhoneNumberToExistingContact(
+        context: Context,
+        contactId: Long?,
+        existingNumber: String?,
+        newNumber: String,
+        label: String = "Mobile"
+    ): Boolean {
+        return try {
+            val cleanNewNumber = newNumber.trim()
+            if (cleanNewNumber.isBlank()) return false
+
+            var rawContactId: Long? = null
+
+            // 1. Try resolving raw contact ID via contactId
+            if (contactId != null) {
+                context.contentResolver.query(
+                    ContactsContract.RawContacts.CONTENT_URI,
+                    arrayOf(ContactsContract.RawContacts._ID),
+                    "${ContactsContract.RawContacts.CONTACT_ID} = ?",
+                    arrayOf(contactId.toString()),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        rawContactId = cursor.getLong(cursor.getColumnIndexOrThrow(ContactsContract.RawContacts._ID))
+                    }
+                }
+            }
+
+            // 2. Fallback: Query by existing phone number
+            if (rawContactId == null && !existingNumber.isNullOrBlank()) {
+                val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(existingNumber))
+                var foundContactId: Long? = null
+                context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
+                        if (idIdx != -1) foundContactId = cursor.getLong(idIdx)
+                    }
+                }
+                if (foundContactId != null) {
+                    context.contentResolver.query(
+                        ContactsContract.RawContacts.CONTENT_URI,
+                        arrayOf(ContactsContract.RawContacts._ID),
+                        "${ContactsContract.RawContacts.CONTACT_ID} = ?",
+                        arrayOf(foundContactId.toString()),
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            rawContactId = cursor.getLong(cursor.getColumnIndexOrThrow(ContactsContract.RawContacts._ID))
+                        }
+                    }
+                }
+            }
+
+            if (rawContactId == null) return false
+
             val phoneType = when (label.lowercase()) {
                 "home" -> ContactsContract.CommonDataKinds.Phone.TYPE_HOME
                 "work" -> ContactsContract.CommonDataKinds.Phone.TYPE_WORK
+                "other" -> ContactsContract.CommonDataKinds.Phone.TYPE_OTHER
                 else -> ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
             }
-            ops.add(
-                android.content.ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
-                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
-                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
-                    .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, phoneNumber)
-                    .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneType)
-                    .build()
-            )
-            context.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
-            true
+
+            val values = android.content.ContentValues().apply {
+                put(ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                put(ContactsContract.CommonDataKinds.Phone.NUMBER, cleanNewNumber)
+                put(ContactsContract.CommonDataKinds.Phone.TYPE, phoneType)
+            }
+            val insertedUri = context.contentResolver.insert(ContactsContract.Data.CONTENT_URI, values)
+            val success = insertedUri != null
+
+            if (success) {
+                try {
+                    val (accountName, accountType) = getPrimaryContactsAccount(context)
+                    if (accountName != null && accountType != null) {
+                        val account = android.accounts.Account(accountName, accountType)
+                        android.content.ContentResolver.requestSync(
+                            account,
+                            ContactsContract.AUTHORITY,
+                            android.os.Bundle().apply {
+                                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+                            }
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+            success
         } catch (e: Exception) {
-            android.util.Log.e("ContactHelper", "Failed to save contact to device", e)
+            android.util.Log.e("ContactHelper", "Failed to add phone number to existing contact", e)
             false
         }
     }

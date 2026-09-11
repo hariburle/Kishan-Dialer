@@ -1,0 +1,404 @@
+package com.example.ui.components
+
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.util.ContactHelper
+import com.example.util.ContactPhoneNumber
+import com.example.util.DeviceContact
+import com.example.ui.components.WhatsAppIcon
+
+@Composable
+fun ContactRowItem(
+    contact: DeviceContact,
+    searchQuery: String,
+    isFavorite: Boolean,
+    discoveryBadge: String? = null,
+    onItemClick: () -> Unit,
+    onRequestCall: () -> Unit,
+    onCallDirect: (String) -> Unit,
+    onSelectNumber: (String) -> Unit,
+    onSmsClick: (String) -> Unit,
+    onCreateRule: (String) -> Unit,
+    onToggleFavorite: () -> Unit,
+    onPlaceWhatsAppCall: (String) -> Unit = {},
+    onSyncToPhone: () -> Unit = {},
+    getPreferredCallingMode: (String) -> String = { "cellular" }
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val matchedNumber = remember(searchQuery, contact) {
+        if (searchQuery.isNotBlank() && searchQuery.any { it.isDigit() }) {
+            val q = searchQuery.trim()
+            contact.phoneNumbers.firstOrNull { ContactHelper.matchesNumberQuery(it.number, q) }?.number ?: if (ContactHelper.matchesNumberQuery(contact.phoneNumber, q)) contact.phoneNumber else null
+        } else null
+    }
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onItemClick() }
+            .testTag("contact_item_${contact.name}")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Avatar
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    if (!contact.photoUri.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = contact.photoUri,
+                            contentDescription = contact.name,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier.size(48.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = contact.name.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                    if (isFavorite) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFF59E0B),
+                            modifier = Modifier.size(16.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = "Favorite",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Name & Phone / Subtitle
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = contact.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (contact.isAppOnly) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    text = "App",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        if (discoveryBadge != null) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = discoveryBadge,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    val subtitleText = matchedNumber ?: if (contact.phoneNumbers.isNotEmpty()) {
+                        "${contact.phoneNumbers.first().number} (${contact.phoneNumbers.first().label})"
+                    } else {
+                        contact.phoneNumber
+                    }
+                    Text(
+                        text = subtitleText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Quick Action Buttons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = { onRequestCall() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Call",
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { isExpanded = !isExpanded },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = "Expand numbers",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Expanded Phone Numbers List (with inline actions per number)
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    val numbersToDisplay = if (contact.phoneNumbers.isNotEmpty()) contact.phoneNumbers else listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
+
+                    numbersToDisplay.forEach { pn ->
+                        val isMobile = pn.label.equals("Mobile", ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = pn.number,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = pn.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                val prefMode = getPreferredCallingMode(pn.number)
+                                val isWaPref = prefMode == "whatsapp"
+                                val isPhonePref = prefMode == "cellular"
+
+                                val containerBg = MaterialTheme.colorScheme.surfaceVariant
+                                val containerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                // 1. Copy Number (Far Left)
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(pn.number))
+                                        Toast.makeText(context, "Copied ${pn.number}", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = containerBg,
+                                        border = containerBorder,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Number",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (isMobile) {
+                                    // 2. WhatsApp Chat (2nd from Left)
+                                    IconButton(
+                                        onClick = {
+                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = containerBg,
+                                            border = containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                                                    contentDescription = "WhatsApp Chat",
+                                                    tint = Color(0xFF25D366),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 3. WhatsApp Call (Middle)
+                                    IconButton(
+                                        onClick = {
+                                            onPlaceWhatsAppCall(pn.number)
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (isWaPref) Color(0xFF25D366) else containerBg,
+                                            border = if (isWaPref) BorderStroke(2.dp, Color.White) else containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                WhatsAppIcon(modifier = Modifier.size(22.dp))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 4. SMS Message (2nd from Right)
+                                IconButton(
+                                    onClick = { onSmsClick(pn.number) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = containerBg,
+                                        border = containerBorder,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Message,
+                                                contentDescription = "SMS Text",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // 5. Phone Call (Far Right)
+                                IconButton(
+                                    onClick = { onCallDirect(pn.number) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isPhonePref) Color(0xFF16A34A) else containerBg,
+                                        border = if (isPhonePref) BorderStroke(2.dp, Color.White) else containerBorder,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Call,
+                                                contentDescription = "Phone Call",
+                                                tint = if (isPhonePref) Color.White else Color(0xFF16A34A),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -75,5 +75,8 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun insertLocalContact(contact: LocalContact): Long = appDao.insertLocalContact(contact)
     suspend fun updateLocalContact(contact: LocalContact) = appDao.updateLocalContact(contact)
     suspend fun deleteLocalContact(contact: LocalContact) = appDao.deleteLocalContact(contact)
+    suspend fun deleteLocalContactById(id: Long) = appDao.deleteLocalContactById(id)
     suspend fun deleteLocalContactByNumber(phoneNumber: String) = appDao.deleteLocalContactByNumber(phoneNumber)
+    suspend fun deleteLocalContactByName(name: String) = appDao.deleteLocalContactByName(name)
+    suspend fun clearAllLocalContacts() = appDao.clearAllLocalContacts()
 }

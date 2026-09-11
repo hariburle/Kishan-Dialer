@@ -140,8 +140,7 @@ fun CallLogScreen(
                 onCallBack(num)
             },
             onToggleFavorite = {
-                val favName = matchedContact.nickname?.ifBlank { null } ?: matchedContact.name
-                onToggleFavorite(favName, favContact?.phoneNumber ?: matchedContact.phoneNumber, favContact?.label ?: matchedContact.label, matchedContact.photoUri)
+                onToggleFavorite(matchedContact.name, favContact?.phoneNumber ?: matchedContact.phoneNumber, favContact?.label ?: matchedContact.label, matchedContact.photoUri)
             },
             onSetAsDefaultNumber = { newNum, newLabel ->
                 if (favContact != null) {
@@ -243,17 +242,22 @@ fun CallLogScreen(
         val groups = mutableListOf<GroupedCallLog>()
         if (recentCalls.isEmpty()) return@remember groups
 
+        fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+
         var currentGroupCall = recentCalls[0]
         var currentCount = 1
 
         for (i in 1 until recentCalls.size) {
             val call = recentCalls[i]
-            if (call.phoneNumber == currentGroupCall.phoneNumber && call.callType == currentGroupCall.callType) {
+            val curNorm = normDigits(currentGroupCall.phoneNumber)
+            val callNorm = normDigits(call.phoneNumber)
+            val isSameNumber = if (curNorm.isNotBlank() && callNorm.isNotBlank()) curNorm == callNorm else call.phoneNumber == currentGroupCall.phoneNumber
+            if (isSameNumber && call.callType == currentGroupCall.callType) {
                 currentCount++
             } else {
-                val curDigits = currentGroupCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                val curDigits = normDigits(currentGroupCall.phoneNumber)
                 val spam = spamNumbers.firstOrNull { s ->
-                    val sDigits = s.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                    val sDigits = normDigits(s.phoneNumber)
                     s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
                 }
                 val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (spam != null)
@@ -262,9 +266,9 @@ fun CallLogScreen(
                 currentCount = 1
             }
         }
-        val curDigits = currentGroupCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+        val curDigits = normDigits(currentGroupCall.phoneNumber)
         val lastSpam = spamNumbers.firstOrNull { s ->
-            val sDigits = s.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            val sDigits = normDigits(s.phoneNumber)
             s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
         }
         val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (lastSpam != null)
@@ -670,7 +674,8 @@ private fun CallLogItem(
                     // Line 1: Name / Number + Count Badge + WhatsApp Badge + Missed Call Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = call.callerName?.ifBlank { call.phoneNumber } ?: call.phoneNumber,
@@ -678,7 +683,8 @@ private fun CallLogItem(
                             fontWeight = FontWeight.Bold,
                             color = if (group.isSpam) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         if (group.count > 1) {
                             Surface(
@@ -689,6 +695,7 @@ private fun CallLogItem(
                                     text = "(${group.count})",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
                             }
@@ -708,7 +715,8 @@ private fun CallLogItem(
                                         text = "WhatsApp",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF15803D)
+                                        color = Color(0xFF15803D),
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -730,10 +738,11 @@ private fun CallLogItem(
                                         modifier = Modifier.size(11.dp)
                                     )
                                     Text(
-                                        text = "Missed Call",
+                                        text = "Missed",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = Color.White,
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -748,6 +757,7 @@ private fun CallLogItem(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
+                                    maxLines = 1,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }

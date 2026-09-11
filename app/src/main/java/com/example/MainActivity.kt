@@ -590,6 +590,7 @@ fun MainAppContent(
                         isFlipToShhhEnabled = isFlipToShhhEnabled,
                         isShhhActive = isShhhActive,
                         onToggleFlipToShhh = { viewModel.toggleFlipToShhh() },
+                        onDeleteContact = { viewModel.deleteContact(it) },
                         deviceContacts = deviceContacts
                     )
                     1 -> CallLogScreen(
@@ -710,7 +711,8 @@ fun MainAppContent(
                         },
                         onSyncAllAppContactsToDevice = {
                             viewModel.syncAllAppContactsToDevice()
-                        }
+                        },
+                        onDeleteContact = { viewModel.deleteContact(it) }
                     )
                     4 -> RulesScreen(
                         rules = rules,

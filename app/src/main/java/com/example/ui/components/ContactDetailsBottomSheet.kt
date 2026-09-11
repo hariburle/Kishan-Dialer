@@ -8,6 +8,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,10 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
@@ -52,6 +57,7 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -127,6 +133,7 @@ fun ContactDetailsBottomSheet(
     onCreateRule: (String) -> Unit,
     onSyncToPhone: (() -> Unit)? = null,
     onEditContact: (name: String, phoneNumber: String, label: String, nickname: String?) -> Unit = { _, _, _, _ -> },
+    onDeleteContact: ((DeviceContact) -> Unit)? = null,
     getPreferredCallingMode: (String) -> String = { "cellular" },
     onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     onDismiss: () -> Unit
@@ -137,6 +144,8 @@ fun ContactDetailsBottomSheet(
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showCreateContactDialog by remember { mutableStateOf(false) }
+    var showAddNumberDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
     val isUnknownNumber = remember(contact) {
         val trimmed = contact.name.trim()
         trimmed.startsWith("+") ||
@@ -210,21 +219,38 @@ fun ContactDetailsBottomSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly) {
-                                ContactHelper.launchContactEditor(context, contact)
-                            } else {
-                                showEditDialog = true
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Contact",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        IconButton(
+                            onClick = {
+                                if (contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly) {
+                                    ContactHelper.launchContactEditor(context, contact)
+                                    onDismiss()
+                                } else {
+                                    showEditDialog = true
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Contact",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showDeleteConfirmationDialog = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Contact",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
 
                     Row(
@@ -394,6 +420,7 @@ fun ContactDetailsBottomSheet(
                         onClick = {
                             if (isPhoneContact) {
                                 ContactHelper.launchContactEditor(context, contact)
+                                onDismiss()
                             } else {
                                 showEditDialog = true
                             }
@@ -782,6 +809,35 @@ fun ContactDetailsBottomSheet(
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                                 modifier = Modifier.padding(horizontal = 12.dp)
+                            )
+                        }
+                    }
+
+                    // Add another phone number button for existing contact
+                    if (!isUnknownNumber) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAddNumberDialog = true }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Add another phone number",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -1251,6 +1307,157 @@ fun ContactDetailsBottomSheet(
         )
     }
 
+    if (showAddNumberDialog) {
+        var newNumberInput by remember { mutableStateOf("") }
+        var newNumberLabel by remember { mutableStateOf("Work") }
+        val isNewNumberValid = newNumberInput.any { it.isDigit() || it in "+*#" } && newNumberInput.trim().length >= 2
+        val presetLabels = listOf("Mobile", "Work", "Home", "Main", "Other")
+
+        AlertDialog(
+            onDismissRequest = { showAddNumberDialog = false },
+            title = {
+                Text(
+                    text = "Add Phone Number",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Add an additional phone number for ${contact.name}:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = newNumberInput,
+                        onValueChange = { input ->
+                            newNumberInput = input.filter { it.isDigit() || it in "+*#()- .," }
+                        },
+                        label = { Text("Phone Number") },
+                        placeholder = { Text("+1 (555) 000-0000") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Phone,
+                            imeAction = ImeAction.Done
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Label",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            presetLabels.forEach { preset ->
+                                FilterChip(
+                                    selected = newNumberLabel.equals(preset, ignoreCase = true),
+                                    onClick = { newNumberLabel = preset },
+                                    label = { Text(preset, fontSize = 11.sp, maxLines = 1) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = newNumberInput.trim()
+                        if (clean.isNotBlank()) {
+                            ContactHelper.addPhoneNumberToExistingContact(
+                                context = context,
+                                contactId = contact.contactId,
+                                existingNumber = contact.phoneNumber,
+                                newNumber = clean,
+                                label = newNumberLabel
+                            )
+                            Toast.makeText(context, "Added $newNumberLabel number to ${contact.name}", Toast.LENGTH_SHORT).show()
+                            showAddNumberDialog = false
+                        }
+                    },
+                    enabled = isNewNumberValid,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Add Number")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddNumberDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDeleteConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmationDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Delete Contact?",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete ${contact.name}? ${if (!contact.isAppOnly) "This will remove the contact from your Phone Contacts and this app." else "This will remove the local contact."}"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmationDialog = false
+                        onDeleteContact?.invoke(contact)
+                        Toast.makeText(context, "Deleted ${contact.name}", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmationDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showCreateContactDialog) {
         CreateContactDialog(
             initialNumber = contact.phoneNumber,
@@ -1272,224 +1479,3 @@ fun ContactDetailsBottomSheet(
     }
 }
 
-@Composable
-private fun ActionRoundButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    iconText: String? = null,
-    iconContent: (@Composable () -> Unit)? = null,
-    label: String,
-    containerColor: Color,
-    contentColor: Color,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = containerColor,
-            contentColor = contentColor,
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onClick)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (iconContent != null) {
-                    iconContent()
-                } else if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = label,
-                        tint = contentColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else if (iconText != null) {
-                    Text(
-                        text = iconText,
-                        color = contentColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun EditContactDialog(
-    initialName: String,
-    initialNumber: String,
-    initialLabel: String,
-    initialNickname: String,
-    onDismiss: () -> Unit,
-    onSave: (name: String, number: String, label: String, nickname: String?) -> Unit
-) {
-    var name by remember { mutableStateOf(initialName) }
-    var number by remember { mutableStateOf(initialNumber) }
-    var label by remember { mutableStateOf(initialLabel) }
-    var nickname by remember { mutableStateOf(initialNickname) }
-
-    val presetLabels = listOf("Mobile", "Work", "Home", "VIP", "Family")
-    val initials = (nickname.ifBlank { name }).trim().take(1).uppercase().ifBlank { "?" }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(46.dp),
-                    shadowElevation = 1.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = initials,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-                Column {
-                    Text(
-                        text = "Edit Contact",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Update contact details & shortcuts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Contact Name") },
-                    placeholder = { Text("Full name") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = nickname,
-                    onValueChange = { nickname = it },
-                    label = { Text("Nickname (optional)") },
-                    placeholder = { Text("e.g. Mom, Alex, Boss") },
-                    supportingText = { Text("Shown on keypad & speed dial shortcuts") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Badge,
-                            contentDescription = null,
-                            tint = Color(0xFFD97706)
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFD97706),
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = number,
-                    onValueChange = { number = it },
-                    label = { Text("Phone Number") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Phone Label",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        presetLabels.forEach { preset ->
-                            FilterChip(
-                                selected = label.equals(preset, ignoreCase = true),
-                                onClick = { label = preset },
-                                label = { Text(preset, fontSize = 12.sp) },
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (name.isNotBlank() && number.isNotBlank()) {
-                        onSave(name.trim(), number.trim(), label.trim().ifBlank { "Mobile" }, nickname.trim().ifBlank { null })
-                    }
-                },
-                enabled = name.isNotBlank() && number.isNotBlank(),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Save Changes", fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Cancel")
-            }
-        }
-    )
-}

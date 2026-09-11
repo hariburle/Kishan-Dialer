@@ -57,16 +57,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class ContactSortBy { FIRST_NAME, LAST_NAME }
-enum class ContactSortOrder { ASCENDING, DESCENDING }
-enum class ContactSourceFilter { ALL, APP_ONLY, DEVICE }
-enum class SmartContactSort(val label: String, val emoji: String) {
-    A_Z("All (A-Z)", "🔤"),
-    RECENT("Recent", "🕒"),
-    FREQUENT("Frequent", "🔥"),
-    LONG_TIME("Long Time No Talk", "🕰️"),
-    REDISCOVER("Rediscover", "🎲")
-}
+import com.example.ui.models.ContactSortBy
+import com.example.ui.models.ContactSortOrder
+import com.example.ui.models.ContactSourceFilter
+import com.example.ui.models.SmartContactSort
+import com.example.ui.components.ContactRowItem
+import com.example.ui.components.FavoriteTopChip
 
 private fun getContactStats(
     c: DeviceContact,
@@ -126,6 +122,7 @@ fun ContactsScreen(
     onUpdateContact: (oldNumber: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     onSyncContactToPhone: (DeviceContact) -> Unit = {},
     onSyncAllAppContactsToDevice: () -> Unit = {},
+    onDeleteContact: (DeviceContact) -> Unit = {},
     deviceContacts: List<DeviceContact> = emptyList(),
     onRefreshContacts: () -> Unit = {},
     onPlaceWhatsAppCall: (String) -> Unit = {},
@@ -147,28 +144,22 @@ fun ContactsScreen(
     var contactForMultiCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactForMultiCall by remember { mutableStateOf<FavoriteContact?>(null) }
 
-    var localContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
-    val effectiveContacts = if (deviceContacts.isNotEmpty()) deviceContacts else localContacts
+    // Directly use deviceContacts as the single source of truth
+    val effectiveContacts = deviceContacts
 
-    LaunchedEffect(Unit) {
-        if (deviceContacts.isEmpty()) {
-            withContext(Dispatchers.IO) {
-                localContacts = ContactHelper.fetchDeviceContacts(context)
+    // Live update or close bottom sheet if contact was modified or deleted externally
+    LaunchedEffect(deviceContacts) {
+        val current = contactForDetailsSheet
+        if (current != null) {
+            val updated = deviceContacts.firstOrNull { c ->
+                (current.contactId != null && c.contactId == current.contactId) ||
+                (c.name.equals(current.name, ignoreCase = true) && c.phoneNumber == current.phoneNumber)
             }
-        }
-    }
-
-    // Keep contactForDetailsSheet in sync if contact is edited in system contacts app
-    LaunchedEffect(effectiveContacts) {
-        val current = contactForDetailsSheet ?: return@LaunchedEffect
-        val updated = effectiveContacts.firstOrNull { dc ->
-            (current.contactId != null && dc.contactId == current.contactId) ||
-            dc.phoneNumber == current.phoneNumber ||
-            dc.phoneNumbers.any { pn -> current.phoneNumbers.any { cpn -> cpn.number == pn.number } } ||
-            dc.name.equals(current.name, ignoreCase = true)
-        }
-        if (updated != null) {
-            contactForDetailsSheet = updated
+            if (updated == null) {
+                contactForDetailsSheet = null
+            } else {
+                contactForDetailsSheet = updated
+            }
         }
     }
 
@@ -240,7 +231,7 @@ fun ContactsScreen(
                     }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
                 } else {
                     compareBy(String.CASE_INSENSITIVE_ORDER) { contact ->
-                        contact.nickname?.ifBlank { null } ?: contact.name
+                        contact.name.trim()
                     }
                 }
                 val ordered = filteredContacts.sortedWith(comparator)
@@ -306,7 +297,7 @@ fun ContactsScreen(
                     val parts = contact.name.trim().split(Regex("\\s+"))
                     if (parts.size > 1) parts.last() else parts.first()
                 } else {
-                    contact.nickname?.ifBlank { null } ?: contact.name
+                    contact.name.trim()
                 }
                 val firstChar = nameToUse.trim().firstOrNull()?.uppercaseChar() ?: '#'
                 if (firstChar in 'A'..'Z') firstChar else '#'
@@ -888,8 +879,7 @@ fun ContactsScreen(
                                     },
                                     onCreateRule = { num -> onCreateRule(num) },
                                     onToggleFavorite = {
-                                        val favName = contact.nickname?.ifBlank { null } ?: contact.name
-                                        onToggleFavorite(favName, contact.phoneNumber, contact.label, contact.photoUri)
+                                        onToggleFavorite(contact.name, contact.phoneNumber, contact.label, contact.photoUri)
                                     },
                                     onPlaceWhatsAppCall = onPlaceWhatsAppCall,
                                     onSyncToPhone = {
@@ -943,8 +933,7 @@ fun ContactsScreen(
                                 },
                                 onCreateRule = { num -> onCreateRule(num) },
                                 onToggleFavorite = {
-                                    val favName = contact.nickname?.ifBlank { null } ?: contact.name
-                                    onToggleFavorite(favName, contact.phoneNumber, contact.label, contact.photoUri)
+                                    onToggleFavorite(contact.name, contact.phoneNumber, contact.label, contact.photoUri)
                                 },
                                 onPlaceWhatsAppCall = onPlaceWhatsAppCall,
                                 onSyncToPhone = {
@@ -1029,11 +1018,10 @@ fun ContactsScreen(
                     f.name.equals(currentContact.name, ignoreCase = true) ||
                     (!currentContact.nickname.isNullOrBlank() && f.name.equals(currentContact.nickname, ignoreCase = true))
                 }
-                val favName = currentContact.nickname?.ifBlank { null } ?: currentContact.name
                 if (fav != null) {
                     onUpdateFavoriteNumber(fav, newNum, newLabel)
                 } else {
-                    onAddFavorite(favName, newNum, newLabel, currentContact.photoUri)
+                    onAddFavorite(currentContact.name, newNum, newLabel, currentContact.photoUri)
                 }
                 contactForMultiCall = null
                 favoriteContactForMultiCall = null
@@ -1076,18 +1064,16 @@ fun ContactsScreen(
                 if (matchedFav != null) {
                     onDeleteFavorite(matchedFav)
                 } else {
-                    val favName = detailContact.nickname?.ifBlank { null } ?: detailContact.name
                     val defNum = detailContact.phoneNumber.ifBlank { detailContact.phoneNumbers.firstOrNull()?.number ?: "" }
                     val defLabel = detailContact.label.ifBlank { detailContact.phoneNumbers.firstOrNull()?.label ?: "Mobile" }
-                    onAddFavorite(favName, defNum, defLabel, detailContact.photoUri)
+                    onAddFavorite(detailContact.name, defNum, defLabel, detailContact.photoUri)
                 }
             },
             onSetAsDefaultNumber = { num, label ->
                 if (matchedFav != null) {
                     onUpdateFavoriteNumber(matchedFav, num, label)
                 } else {
-                    val favName = detailContact.nickname?.ifBlank { null } ?: detailContact.name
-                    onAddFavorite(favName, num, label, detailContact.photoUri)
+                    onAddFavorite(detailContact.name, num, label, detailContact.photoUri)
                 }
             },
             onClearDefaultNumber = {
@@ -1101,6 +1087,10 @@ fun ContactsScreen(
             },
             onSyncToPhone = {
                 onSyncContactToPhone(detailContact)
+            },
+            onDeleteContact = { contactToDelete ->
+                onDeleteContact(contactToDelete)
+                contactForDetailsSheet = null
             },
             getPreferredCallingMode = getPreferredCallingMode,
             onSaveLearnedCallMode = onSaveLearnedCallMode,
@@ -1124,457 +1114,5 @@ fun ContactsScreen(
                 showAddCustomDialog = false
             }
         )
-    }
-}
-
-@Composable
-private fun ContactRowItem(
-    contact: DeviceContact,
-    searchQuery: String,
-    isFavorite: Boolean,
-    discoveryBadge: String? = null,
-    onItemClick: () -> Unit,
-    onRequestCall: () -> Unit,
-    onCallDirect: (String) -> Unit,
-    onSelectNumber: (String) -> Unit,
-    onSmsClick: (String) -> Unit,
-    onCreateRule: (String) -> Unit,
-    onToggleFavorite: () -> Unit,
-    onPlaceWhatsAppCall: (String) -> Unit = {},
-    onSyncToPhone: () -> Unit = {},
-    getPreferredCallingMode: (String) -> String = { "cellular" }
-) {
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    var isExpanded by remember { mutableStateOf(false) }
-
-    val matchedNumber = remember(searchQuery, contact) {
-        if (searchQuery.isNotBlank() && searchQuery.any { it.isDigit() }) {
-            val q = searchQuery.trim()
-            contact.phoneNumbers.firstOrNull { ContactHelper.matchesNumberQuery(it.number, q) }?.number ?: if (ContactHelper.matchesNumberQuery(contact.phoneNumber, q)) contact.phoneNumber else null
-        } else null
-    }
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onItemClick() }
-            .testTag("contact_item_${contact.name}")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Avatar
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    if (!contact.photoUri.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = contact.photoUri,
-                            contentDescription = contact.name,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Surface(
-                            modifier = Modifier.size(48.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = contact.name.take(1).uppercase(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
-                    if (isFavorite) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFF59E0B),
-                            modifier = Modifier.size(16.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = "Favorite",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Name & Phone / Subtitle
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = contact.name,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (contact.isAppOnly) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
-                                Text(
-                                    text = "App",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                        if (discoveryBadge != null) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer
-                            ) {
-                                Text(
-                                    text = discoveryBadge,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    val subtitleText = matchedNumber ?: if (contact.phoneNumbers.isNotEmpty()) {
-                        "${contact.phoneNumbers.first().number} (${contact.phoneNumbers.first().label})"
-                    } else {
-                        contact.phoneNumber
-                    }
-                    Text(
-                        text = subtitleText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Quick Action Buttons
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconButton(
-                        onClick = { onRequestCall() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Call",
-                            tint = Color(0xFF16A34A),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { isExpanded = !isExpanded },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = "Expand numbers",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
-            // Expanded Phone Numbers List (with inline actions per number)
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    val numbersToDisplay = if (contact.phoneNumbers.isNotEmpty()) contact.phoneNumbers else listOf(ContactPhoneNumber(contact.phoneNumber, contact.label))
-
-                    numbersToDisplay.forEach { pn ->
-                        val isMobile = pn.label.equals("Mobile", ignoreCase = true)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = pn.number,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = pn.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                val prefMode = getPreferredCallingMode(pn.number)
-                                val isWaPref = prefMode == "whatsapp"
-                                val isPhonePref = prefMode == "cellular"
-
-                                val containerBg = MaterialTheme.colorScheme.surfaceVariant
-                                val containerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                                // 1. Copy Number (Far Left)
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(pn.number))
-                                        Toast.makeText(context, "Copied ${pn.number}", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = containerBg,
-                                        border = containerBorder,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Default.ContentCopy,
-                                                contentDescription = "Copy Number",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                if (isMobile) {
-                                    // 2. WhatsApp Chat (2nd from Left)
-                                    IconButton(
-                                        onClick = {
-                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
-                                        },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = containerBg,
-                                            border = containerBorder,
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.Chat,
-                                                    contentDescription = "WhatsApp Chat",
-                                                    tint = Color(0xFF25D366),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // 3. WhatsApp Call (Middle)
-                                    IconButton(
-                                        onClick = {
-                                            onPlaceWhatsAppCall(pn.number)
-                                        },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = if (isWaPref) Color(0xFF25D366) else containerBg,
-                                            border = if (isWaPref) BorderStroke(2.dp, Color.White) else containerBorder,
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                WhatsAppIcon(modifier = Modifier.size(22.dp))
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 4. SMS Message (2nd from Right)
-                                IconButton(
-                                    onClick = { onSmsClick(pn.number) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = containerBg,
-                                        border = containerBorder,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.Message,
-                                                contentDescription = "SMS Text",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 5. Phone Call (Far Right)
-                                IconButton(
-                                    onClick = { onCallDirect(pn.number) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = if (isPhonePref) Color(0xFF16A34A) else containerBg,
-                                        border = if (isPhonePref) BorderStroke(2.dp, Color.White) else containerBorder,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Default.Call,
-                                                contentDescription = "Phone Call",
-                                                tint = if (isPhonePref) Color.White else Color(0xFF16A34A),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun FavoriteTopChip(
-    favorite: FavoriteContact,
-    onTap: () -> Unit,
-    onLongPress: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        ),
-        modifier = Modifier
-            .width(136.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .combinedClickable(
-                onClick = onTap,
-                onLongClick = onLongPress
-            )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Box(contentAlignment = Alignment.BottomEnd) {
-                if (!favorite.photoUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = favorite.photoUri,
-                        contentDescription = favorite.name,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Surface(
-                        modifier = Modifier.size(42.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = favorite.name.take(1).uppercase(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFF59E0B),
-                    modifier = Modifier.size(16.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(10.dp)
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = favorite.nickname ?: favorite.name,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-
-            Text(
-                text = favorite.phoneNumber,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
     }
 }

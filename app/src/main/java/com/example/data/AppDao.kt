@@ -133,6 +133,15 @@ interface AppDao {
     @Delete
     suspend fun deleteLocalContact(contact: LocalContact)
 
+    @Query("DELETE FROM local_contacts WHERE id = :id")
+    suspend fun deleteLocalContactById(id: Long)
+
     @Query("DELETE FROM local_contacts WHERE phoneNumber = :phoneNumber")
     suspend fun deleteLocalContactByNumber(phoneNumber: String)
+
+    @Query("DELETE FROM local_contacts WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))")
+    suspend fun deleteLocalContactByName(name: String)
+
+    @Query("DELETE FROM local_contacts")
+    suspend fun clearAllLocalContacts()
 }

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
@@ -98,81 +99,7 @@ import com.example.util.ContactHelper
 import com.example.util.DeviceContact
 import com.example.util.T9Helper
 import com.example.util.T9SearchResult
-
-@Composable
-private fun QuickRecentsSection(
-    recentCalls: List<RecentCall>,
-    onSelectNumber: (String) -> Unit
-) {
-    if (recentCalls.isEmpty()) return
-    val topRecent = remember(recentCalls) { recentCalls.take(6) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = "Recent",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            topRecent.forEach { call ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSelectNumber(call.phoneNumber) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = when (call.callType) {
-                                1 -> Icons.AutoMirrored.Filled.CallReceived
-                                2 -> Icons.AutoMirrored.Filled.CallMade
-                                else -> Icons.AutoMirrored.Filled.CallMissed
-                            },
-                            contentDescription = null,
-                            tint = when (call.callType) {
-                                1 -> Color(0xFF16A34A)
-                                2 -> MaterialTheme.colorScheme.primary
-                                else -> Color(0xFFDC2626)
-                            },
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Column {
-                            Text(
-                                text = call.callerName?.ifBlank { null } ?: call.phoneNumber,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = call.phoneNumber,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+import com.example.ui.components.QuickRecentsSection
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -209,8 +136,7 @@ fun DialerScreen(
     var assignSpeedDialSlotTarget by remember { mutableStateOf<Int?>(null) }
     var speedDialActionSlotTarget by remember { mutableStateOf<Pair<Int, FavoriteContact>?>(null) }
     var matchedContact by remember { mutableStateOf<DeviceContact?>(null) }
-    var localContacts by remember { mutableStateOf<List<DeviceContact>>(emptyList()) }
-    val effectiveContacts = if (deviceContacts.isNotEmpty()) deviceContacts else localContacts
+    val effectiveContacts = deviceContacts
     var speedDialToast by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(speedDialToast) {
         if (speedDialToast != null) {
@@ -223,22 +149,25 @@ fun DialerScreen(
     var multiNumberSpeedDialSlot by remember { mutableStateOf<Int?>(null) }
     var multiNumberFavoriteTarget by remember { mutableStateOf<FavoriteContact?>(null) }
 
-    // Load device contacts if not provided by parent
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (deviceContacts.isEmpty()) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val list = ContactHelper.fetchDeviceContacts(context)
-                localContacts = list
+    // Combine all contacts for T9, prioritizing official device contacts for accurate names
+    val allSearchContacts = remember(favorites, effectiveContacts) {
+        fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+        val list = mutableListOf<DeviceContact>()
+        list.addAll(effectiveContacts)
+        val knownDigits = effectiveContacts.flatMap { dc ->
+            dc.phoneNumbers.map { normDigits(it.number) } + listOf(normDigits(dc.phoneNumber))
+        }.filter { it.isNotBlank() }.toSet()
+
+        favorites.forEach { fav ->
+            val fDigits = normDigits(fav.phoneNumber)
+            if (fDigits.isBlank() || !knownDigits.contains(fDigits)) {
+                list.add(DeviceContact(fav.name, fav.phoneNumber, fav.label, fav.photoUri, nickname = fav.nickname, isStarred = true))
             }
         }
-    }
-
-    // Combine all contacts for T9
-    val allSearchContacts = remember(favorites, effectiveContacts) {
-        val list = mutableListOf<DeviceContact>()
-        favorites.forEach { list.add(DeviceContact(it.name, it.phoneNumber, it.label, it.photoUri)) }
-        list.addAll(effectiveContacts)
-        list.distinctBy { it.phoneNumber }
+        list.distinctBy { dc ->
+            val digits = normDigits(dc.phoneNumber)
+            if (digits.isNotBlank()) digits else (dc.name.trim().lowercase() + "_" + (dc.contactId ?: 0L))
+        }
     }
 
     // T9 search results
@@ -422,7 +351,15 @@ fun DialerScreen(
                             } else if (number.length >= 3) {
                                 AssistChip(
                                     onClick = { showAddFavoriteDialog = true },
-                                    label = { Text("Add to Favorites", fontSize = 11.sp) },
+                                    label = { Text("Add Contact", fontSize = 11.sp) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
                                     modifier = Modifier.height(32.dp)
                                 )
                             }
@@ -914,13 +851,13 @@ fun DialerScreen(
         )
     }
 
-    // Add Favorite / New Contact Dialog
+    // Add Contact Dialog
     if (showAddFavoriteDialog) {
         CreateContactDialog(
             initialNumber = number,
             initialName = matchedContact?.name ?: "",
-            dialogTitle = "Add to Favorites",
-            initialAddToFavorites = true,
+            dialogTitle = "Add Contact",
+            initialAddToFavorites = false,
             onDismiss = { showAddFavoriteDialog = false },
             onSave = { name, favNumber, label, destination, addToFavs ->
                 onAddNewContact(name, favNumber, label, destination, addToFavs)

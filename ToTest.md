@@ -30,6 +30,8 @@ Mark `[x]` on the checkbox for each task once you verify it. Each section below 
 - [x] **Task 25 (Phase 6)** — Dynamic Star Icon Unstarring Reactive Sync
 - [x] **Task 26 (Phase 6)** — Favorites Header Cleanup (Removed redundant header line)
 - [x] **Task 27 (Phase 6)** — Settings Card Design Sample Previews Update (Dual Dialers)
+- [x] **Task 28 (Phase 6)** — Recents Category Filters & `🤖 Rule` Badges
+- [x] **Task 29 (Phase 6)** — Startup Panel & Bottom Navigation Bar Tray Sync
 
 ---
 

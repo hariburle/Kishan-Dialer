@@ -29,9 +29,12 @@ import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -268,16 +271,34 @@ fun CallLogScreen(
     }
 
     var searchQuery by remember { mutableStateOf("") }
-    val filteredGroupedCalls = remember(groupedCalls, searchQuery) {
-        if (searchQuery.isBlank()) groupedCalls
-        else {
-            val q = searchQuery.trim().lowercase()
-            groupedCalls.filter { group ->
-                val call = group.primaryCall
+    var selectedFilter by remember { mutableStateOf("ALL") }
+
+    val filteredGroupedCalls = remember(groupedCalls, searchQuery, selectedFilter) {
+        groupedCalls.filter { group ->
+            val call = group.primaryCall
+
+            // 1. Check Category Filter
+            val matchesFilter = when (selectedFilter) {
+                "MISSED" -> call.callType == 3
+                "INCOMING" -> call.callType == 1
+                "OUTGOING" -> call.callType == 2
+                "SPAM" -> group.isSpam
+                "RULES" -> !call.ruleMatched.isNullOrBlank()
+                "NOTES" -> !call.note.isNullOrBlank()
+                else -> true
+            }
+
+            if (!matchesFilter) return@filter false
+
+            // 2. Check Search Query
+            if (searchQuery.isBlank()) true
+            else {
+                val q = searchQuery.trim().lowercase()
                 call.phoneNumber.contains(q) ||
                 (call.callerName != null && call.callerName.lowercase().contains(q)) ||
                 (call.callReason != null && call.callReason.lowercase().contains(q)) ||
                 (call.note != null && call.note.lowercase().contains(q)) ||
+                (call.ruleMatched != null && call.ruleMatched.lowercase().contains(q)) ||
                 (call.communityTag != null && call.communityTag.lowercase().contains(q))
             }
         }
@@ -367,6 +388,35 @@ fun CallLogScreen(
                     .padding(bottom = 6.dp)
                     .testTag("recents_search_input")
             )
+
+            // Category Filter Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val filterOptions = listOf(
+                    "ALL" to "All",
+                    "MISSED" to "Missed",
+                    "INCOMING" to "Incoming",
+                    "OUTGOING" to "Outgoing",
+                    "SPAM" to "Spam",
+                    "RULES" to "Rules",
+                    "NOTES" to "Notes"
+                )
+                filterOptions.forEach { (key, label) ->
+                    val isSelected = (selectedFilter == key)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedFilter = key },
+                        label = { Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium) },
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
 
             if (filteredGroupedCalls.isEmpty() && searchQuery.isNotBlank()) {
                 Box(
@@ -642,6 +692,20 @@ private fun CallLogItem(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        if (!call.ruleMatched.isNullOrBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "🤖 ${call.ruleMatched}",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                         if (!call.note.isNullOrBlank()) {
                             Icon(

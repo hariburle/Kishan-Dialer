@@ -111,6 +111,8 @@
 - [x] **Dynamic Star Icon Unstarring Reactive Sync**: Dynamically evaluate `isFavorite` against active `favorites` StateFlow in `FavoritesScreen.kt` and `ContactDetailsBottomSheet.kt` so the star icon updates to hollow (`Icons.Outlined.StarBorder`) immediately upon unstarring.
 - [x] **Favorites Header Cleanup**: Removed redundant `"Favorites #"` section header from `FavoritesScreen.kt` for maximum grid space.
 - [x] **Settings Card Design Sample Previews Update**: Updated Bento, Grid, and Material card style previews in `RulesScreen.kt` settings tab to showcase dual dialer action buttons (`Phone` and `WhatsApp`).
+- [x] **Recents Category Filters & Rule Badges**: Added top filter chips (`All`, `Missed`, `Incoming`, `Outgoing`, `Spam`, `Rules`, `Notes`) and `🤖 Rule Name` badges in `CallLogScreen.kt`.
+- [x] **Startup Panel & Tray Synchronization**: Added bi-directional `LaunchedEffect` synchronization between `selectedTab` and `pagerState` in `MainActivity.kt` so the active panel and bottom navigation bar tray are 100% synchronized on startup and deep-links.
 - [x] **Contact Details Sizing & Edge Padding**: Added status bar padding and top spacing to `ContactDetailsBottomSheet` so that long call history lists and scrolling headers respect screen bounds and do not scroll over the top edge of the screen.
 - [x] **Ignore Popular Contacts**: Added option in favorite/popular screen edit mode to ignore/hide specific contacts from the popular section, with an "Ignored Popular Contacts" restoration section.
 - [x] **Search Results Enhancement**: Updated search results in favorites to include "Add to Favorites" and dual-action Phone/WhatsApp call buttons for each contact number.

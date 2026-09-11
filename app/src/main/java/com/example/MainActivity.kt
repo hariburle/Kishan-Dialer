@@ -348,6 +348,13 @@ fun MainAppContent(
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = selectedTab.coerceIn(0, 4)) { 5 }
 
+    // Keep pagerState and selectedTab 100% synchronized on startup, deep-links, and gestures
+    LaunchedEffect(selectedTab) {
+        if (pagerState.currentPage != selectedTab) {
+            pagerState.scrollToPage(selectedTab)
+        }
+    }
+
     LaunchedEffect(pagerState.currentPage) {
         if (selectedTab != pagerState.currentPage) {
             selectedTab = pagerState.currentPage

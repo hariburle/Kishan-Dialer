@@ -190,6 +190,16 @@
   - **Analysis**: Updated Bento, Grid (Quick Action), and Material sample card previews in `RulesScreen.kt` settings tab to showcase side-by-side dual dialers.
   - **Status**: [x] Completed
 
+- [x] **Task 28: Recents Category Filters & Rule Badges**
+  - **User Item**: ("In the recents panel, will be good to have a filter for All, Incoming, Missed, Outgoing, Spam etc., and something to show calls that triggered a rule")
+  - **Analysis**: Added top filter chips (`All`, `Missed`, `Incoming`, `Outgoing`, `Spam`, `Rules`, `Notes`) and `🤖 Rule Name` badges in `CallLogScreen.kt`.
+  - **Status**: [x] Completed
+
+- [x] **Task 29: Startup Panel & Tray Synchronization**
+  - **User Item**: ("Sometimes when i open the app, the panel showing and the selected panel in the tray are out of sync")
+  - **Analysis**: Added bi-directional `LaunchedEffect` synchronization between `selectedTab` and `pagerState` in `MainActivity.kt` so the active panel and bottom navigation bar tray are 100% synchronized on startup and deep-links.
+  - **Status**: [x] Completed
+
 ---
 
 ## 📊 Execution & Checkpoint Summary Table
@@ -201,4 +211,4 @@
 | **Phase 3** | Tasks 3, 5, 7, 13 | Zero dummy flash, Fresh install call log sync, Missed call deep-link, Configure mode delete persistence | ✅ Completed |
 | **Phase 4** | Tasks 6, 11 | Bento Ask & Learn dialers, Dedicated Spam window | ✅ Completed |
 | **Phase 5** | Tasks 9, 10 | Horizontal panel/tab swipe navigation, Secondary gestures | ✅ Completed |
-| **Phase 6** | Tasks 14–27 | Recents search, Reorder persistence, Icon sizing, Popular ignore, Keypad hybrid buttons, Unstarring fix | ✅ Completed |
+| **Phase 6** | Tasks 14–29 | Recents search/filters, Reorder persistence, Icon sizing, Popular ignore, Keypad hybrid buttons, Panel sync | ✅ Completed |

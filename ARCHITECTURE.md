@@ -99,3 +99,20 @@ Evaluate Automation Rules (CallManager.kt)
 7. **Directional Grid Reordering Controls**:
    - In Configure Mode, every card provides explicit directional arrow buttons (`▲` Up Row, `▼` Down Row, `◄` Left Column, `►` Right Column).
    - Each directional button is dynamically enabled **only if there is space to move in that direction** (e.g., `▲` is enabled only if `index >= 2` in a 2-column grid).
+
+---
+
+## 6. Phase 6 Advanced Features & System Polish
+
+1. **Smart Contact Discovery & Sorting**:
+   - Provides 5 dynamic sort modes (`A-Z`, `Recent`, `Long Time No Talk`, `Frequent`, `Rediscover`) uncoupled from alphabetical grouping.
+2. **Keypad Hybrid Action Buttons**:
+   - Redesigned Keypad action row into wide, high-visibility Hybrid Buttons (`[ 📞 Phone Call ]` in Deep Emerald `#059669` and `[ 💬 WhatsApp ]` in signature `#25D366`) with distinct branding and glowing preferred borders.
+3. **Dedicated Spam Management Center**:
+   - `SpamManagementDialog` provides blocked numbers list, quick search, manual blocking, and auto-block toggles.
+4. **Recents Category Filters & Rule Pattern Matching**:
+   - Filter chips (`All`, `Missed`, `In`, `Out`, `Spam`, `Rules`, `Notes`) and `🤖 Rule` badges. Rules filter matches historical calls matching active rule patterns.
+5. **Phone vs Local Contact Edit Routing**:
+   - System phone contacts (`contactId > 0`) open directly in the native Android Phone Contacts editor via `Intent.ACTION_EDIT`, while local app-only contacts open `EditContactDialog`.
+6. **Cloud Auto-Backup & Persistence**:
+   - `backup_rules.xml` and `data_extraction_rules.xml` ensure shared preferences, learned calling choices, and Room SQLite databases persist across reinstalls and cloud restorations.

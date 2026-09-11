@@ -240,6 +240,38 @@ class MainViewModel(
     private val _showInCallKeypad = MutableStateFlow(false)
     val showInCallKeypad: StateFlow<Boolean> = _showInCallKeypad.asStateFlow()
 
+    // Deep linking & Notification Navigation State
+    private val _pendingNavTab = MutableStateFlow<Int?>(null)
+    val pendingNavTab: StateFlow<Int?> = _pendingNavTab.asStateFlow()
+
+    private val _pendingHighlightNumber = MutableStateFlow<String?>(null)
+    val pendingHighlightNumber: StateFlow<String?> = _pendingHighlightNumber.asStateFlow()
+
+    fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val navTab = intent.getStringExtra("EXTRA_NAV_TAB")
+        val navTabIndex = intent.getIntExtra("EXTRA_NAV_TAB_INDEX", -1)
+        val highlightNum = intent.getStringExtra("EXTRA_HIGHLIGHT_NUMBER")
+
+        if (navTab == "RECENTS" || navTabIndex == 1) {
+            _pendingNavTab.value = 1
+        } else if (navTabIndex in 0..4) {
+            _pendingNavTab.value = navTabIndex
+        }
+
+        if (!highlightNum.isNullOrBlank()) {
+            _pendingHighlightNumber.value = highlightNum
+        }
+    }
+
+    fun clearPendingNavTab() {
+        _pendingNavTab.value = null
+    }
+
+    fun clearPendingHighlight() {
+        _pendingHighlightNumber.value = null
+    }
+
     // Call minimization state (so user can browse the app during active call)
     private val _isCallScreenMinimized = MutableStateFlow(false)
     val isCallScreenMinimized: StateFlow<Boolean> = _isCallScreenMinimized.asStateFlow()

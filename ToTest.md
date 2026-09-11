@@ -3,35 +3,35 @@
 Mark `[x]` on the checkbox for each task once you verify it. Each section below includes the exact test steps and expected results.
 
 ## 📋 Quick Checkpoints
-- [x] **Task 1 (Phase 1)** — Bento/Grid/Material card names & thin Light theme borders
-- [x] **Task 2 (Phase 1)** — Search placeholder `"Search by name or number"` & Bento/Slide defaults
+- [TESTED] **Task 1 (Phase 1)** — Bento/Grid/Material card names & thin Light theme borders
+- [TESTED] **Task 2 (Phase 1)** — Search placeholder `"Search by name or number"` & Bento/Slide defaults
 - [] **Task 12 (Phase 1)** — Keypad dial button highlight ring inside circle (no key movement)
 - [x] **Task 4 (Phase 2)** — Dialog overhaul (rounded corners, avatar monograms, clean styling)
-- [x] **Task 8 (Phase 2)** — Recents `"Recents"` naming, `PersonAdd (+)` avatar & `"Add to Contacts"` workflow
-- [x] **Task 3 (Phase 3)** — Zero initial 4-card flash in Favorites on app launch
-- [x] **Task 5 (Phase 3)** — Fresh install call log import & Auto-Backup persistence across reinstalls
-- [x] **Task 7 (Phase 3)** — Missed call notification deep-link & auto-scroll highlight
-- [x] **Task 13 (Phase 3)** — Instant configure-mode favorite deletion persistence
-- [x] **Task 6 (Phase 4)** — Bento `"Phone"` label, `"Ask and Learn"` dual dialers & WhatsApp call logging in Recents
-- [x] **Task 11 (Phase 4)** — Dedicated Spam & Blocked window + `"International Numbers"` setting label
-- [x] **Task 9 (Phase 5)** — Swipe left/right to switch between main panels
-- [x] **Task 10 (Phase 5)** — Secondary item-level swipe gestures when panel swiping is disabled
-- [ ] **Task 14 (Phase 6)** — Recents Search & Live Filtering by name, number, or note
-- [ ] **Task 15 (Phase 6)** — Favorites Reorder Persistence & Material Card Hairline Border
-- [ ] **Task 16 (Phase 6)** — Ask & Learn Preferred Channel Recomposition & Equal Contacts Icon Sizing
-- [ ] **Task 17 (Phase 6)** — Configure Mode Popular Contact Ignore `[X]` Button
-- [ ] **Task 18 (Phase 6)** — Horizontal Pager Transition Smoothness & Sub-Tab Navigation
-- [x] **Task 19 (Phase 6)** — WhatsApp Outgoing Call Logging in Recents
-- [x] **Task 20 (Phase 6)** — Phone Contact vs Local Contact Edit Routing
-- [x] **Task 21 (Phase 6)** — Popular Contact Favoriting Nickname Auto-Lookup
-- [x] **Task 22 (Phase 6)** — Dual Dialers Across All Favorite Card Styles (Bento, Grid, Material)
-- [x] **Task 23 (Phase 6)** — Keypad Hybrid Action Buttons (`[ 📞 Phone Call ]` & `[ 💬 WhatsApp ]`)
-- [x] **Task 24 (Phase 6)** — Rules FAB Cleanup & "Never" Mode Choice Preservation
-- [x] **Task 25 (Phase 6)** — Dynamic Star Icon Unstarring Reactive Sync
-- [x] **Task 26 (Phase 6)** — Favorites Header Cleanup (Removed redundant header line)
-- [x] **Task 27 (Phase 6)** — Settings Card Design Sample Previews Update (Dual Dialers)
-- [x] **Task 28 (Phase 6)** — Recents Category Filters & `🤖 Rule` Badges
-- [x] **Task 29 (Phase 6)** — Startup Panel & Bottom Navigation Bar Tray Sync
+- [TESTED] **Task 8 (Phase 2)** — Recents `"Recents"` naming, `PersonAdd (+)` avatar & `"Add to Contacts"` workflow
+- [TESTED] **Task 3 (Phase 3)** — Zero initial 4-card flash in Favorites on app launch
+- [BUG] **Task 5 (Phase 3)** — Fresh install call log import & Auto-Backup persistence across reinstalls. ISSUE: after a fresh install call log and popular sections are empty, this is not an issue when a new build is made using the same tool AI Studio or Android Studio but when a fresh build is made when i switch the development tool.
+- [BUG] **Task 7 (Phase 3)** — Missed call notification deep-link & auto-scroll highlight. ISSUE:  Missed Call notification deep link not working , it goes to the recents panel but not highlight the actual call entry 
+- [TESTED] **Task 13 (Phase 3)** — Instant configure-mode favorite deletion persistence
+- [TESTED] **Task 6 (Phase 4)** — Bento `"Phone"` label, `"Ask and Learn"` dual dialers & WhatsApp call logging in Recents
+- [TESTED] **Task 11 (Phase 4)** — Dedicated Spam & Blocked window + `"International Numbers"` setting label
+- [TESTED] **Task 9 (Phase 5)** — Swipe left/right to switch between main panels
+- [ ] **Task 10 (Phase 5)** — Secondary item-level swipe gestures when panel swiping is disabled
+- [TESTED] **Task 14 (Phase 6)** — Recents Search & Live Filtering by name, number, or note
+- [TESTED] **Task 15 (Phase 6)** — Favorites Reorder Persistence & Material Card Hairline Border
+- [TESTED] **Task 16 (Phase 6)** — Ask & Learn Preferred Channel Recomposition & Equal Contacts Icon Sizing
+- [TESTED] **Task 17 (Phase 6)** — Configure Mode Popular Contact Ignore `[X]` Button
+- [TESTED] **Task 18 (Phase 6)** — Horizontal Pager Transition Smoothness & Sub-Tab Navigation
+- [BUG] **Task 19 (Phase 6)** — WhatsApp Outgoing Call Logging in Recents. ISSUE: while the whatsapp outgoing call entries are listed, not able to differentiate that its a whatsapp call.
+- [TESTED] **Task 20 (Phase 6)** — Phone Contact vs Local Contact Edit Routing
+- [TESTED] **Task 21 (Phase 6)** — Popular Contact Favoriting Nickname Auto-Lookup
+- [TESTED] **Task 22 (Phase 6)** — Dual Dialers Across All Favorite Card Styles (Bento, Grid, Material)
+- [TESTED] **Task 23 (Phase 6)** — Keypad Hybrid Action Buttons (`[ 📞 Phone Call ]` & `[ 💬 WhatsApp ]`)
+- [TESTSED] **Task 24 (Phase 6)** — Rules FAB Cleanup & "Never" Mode Choice Preservation
+- [TESTED] **Task 25 (Phase 6)** — Dynamic Star Icon Unstarring Reactive Sync
+- [TESTED] **Task 26 (Phase 6)** — Favorites Header Cleanup (Removed redundant header line)
+- [TESTED] **Task 27 (Phase 6)** — Settings Card Design Sample Previews Update (Dual Dialers)
+- [ ] **Task 28 (Phase 6)** — Recents Category Filters & `🤖 Rule` Badges
+- [BUG] **Task 29 (Phase 6)** — Startup Panel & Bottom Navigation Bar Tray Sync, ISSUE: When I open the app the keyboard opens assuming I am going to type, why ? What's the best experience? I can understand that in Contacts but not in recents or favorites page 
 
 ---
 

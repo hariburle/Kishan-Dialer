@@ -61,11 +61,52 @@ enum class ContactSortBy { FIRST_NAME, LAST_NAME }
 enum class ContactSortOrder { ASCENDING, DESCENDING }
 enum class ContactSourceFilter { ALL, APP_ONLY, DEVICE }
 enum class SmartContactSort(val label: String, val emoji: String) {
-    A_Z("A-Z", "🅰️"),
+    A_Z("All (A-Z)", "🔤"),
     RECENT("Recent", "🕒"),
-    LONG_TIME("Long Time No Talk", "🕰️"),
     FREQUENT("Frequent", "🔥"),
+    LONG_TIME("Long Time No Talk", "🕰️"),
     REDISCOVER("Rediscover", "🎲")
+}
+
+private fun getContactStats(
+    c: DeviceContact,
+    lastTsMap: Map<String, Long>,
+    countMap: Map<String, Int>
+): Pair<Long, Int> {
+    var maxTs = 0L
+    var totalCount = 0
+    val allNumbers = if (c.phoneNumbers.isNotEmpty()) {
+        c.phoneNumbers.map { it.number }
+    } else {
+        listOf(c.phoneNumber)
+    }
+    for (num in allNumbers) {
+        val digits = num.filter { it.isDigit() }.takeLast(10)
+        if (digits.isNotBlank()) {
+            val ts = lastTsMap[digits] ?: 0L
+            if (ts > maxTs) maxTs = ts
+            totalCount += countMap[digits] ?: 0
+        }
+    }
+    return Pair(maxTs, totalCount)
+}
+
+private fun formatRelativeTime(timestamp: Long): String {
+    if (timestamp <= 0L) return "Never"
+    val diff = System.currentTimeMillis() - timestamp
+    if (diff < 0) return "Just now"
+    val minutes = diff / 60_000L
+    val hours = diff / 3600_000L
+    val days = diff / 86400_000L
+    return when {
+        minutes < 1 -> "Just now"
+        minutes < 60 -> "${minutes}m ago"
+        hours < 24 -> "${hours}h ago"
+        days == 1L -> "Yesterday"
+        days < 30 -> "${days}d ago"
+        days < 365 -> "${days / 30}mo ago"
+        else -> "${days / 365}y ago"
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -182,41 +223,85 @@ fun ContactsScreen(
         Pair(lastTimestampMap, callCountMap)
     }
 
-    // Sort contacts dynamically based on selected Smart Sort mode
-    val sortedContacts = remember(filteredContacts, smartSortBy, contactCallStats) {
+    // Dynamic contact surfacing:
+    // In A-Z Directory mode: alphabetical sort by First or Last name, Ascending or Descending.
+    // In Smart Discovery: contacts are surfaced strictly according to discovery parameters and NOT sorted alphabetically.
+    val sortedContacts = remember(filteredContacts, smartSortBy, sortBy, sortOrder, contactCallStats) {
         val (lastTsMap, countMap) = contactCallStats
-        fun getDigits(c: DeviceContact): String = c.phoneNumber.filter { it.isDigit() }.takeLast(10)
 
         when (smartSortBy) {
             SmartContactSort.A_Z -> {
-                filteredContacts.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+                val comparator = if (sortBy == ContactSortBy.LAST_NAME) {
+                    compareBy<DeviceContact, String>(String.CASE_INSENSITIVE_ORDER) { contact ->
+                        val parts = contact.name.trim().split(Regex("\\s+"))
+                        if (parts.size > 1) parts.last() else parts.first()
+                    }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+                } else {
+                    compareBy(String.CASE_INSENSITIVE_ORDER) { contact ->
+                        contact.nickname?.ifBlank { null } ?: contact.name
+                    }
+                }
+                val ordered = filteredContacts.sortedWith(comparator)
+                if (sortOrder == ContactSortOrder.ASCENDING) ordered else ordered.reversed()
             }
             SmartContactSort.RECENT -> {
-                filteredContacts.sortedByDescending { lastTsMap[getDigits(it)] ?: 0L }
-            }
-            SmartContactSort.LONG_TIME -> {
-                filteredContacts.sortedBy { lastTsMap[getDigits(it)] ?: 0L }
+                // Smart Discovery: Order strictly by most recent interaction timestamp descending.
+                // Do NOT sort alphabetically.
+                filteredContacts
+                    .map { c -> c to getContactStats(c, lastTsMap, countMap) }
+                    .filter { it.second.first > 0L }
+                    .sortedByDescending { it.second.first }
+                    .map { it.first }
             }
             SmartContactSort.FREQUENT -> {
-                filteredContacts.sortedByDescending { countMap[getDigits(it)] ?: 0 }
+                // Smart Discovery: Order strictly by call interaction volume descending.
+                // Do NOT sort alphabetically.
+                filteredContacts
+                    .map { c -> c to getContactStats(c, lastTsMap, countMap) }
+                    .filter { it.second.second > 0 }
+                    .sortedByDescending { it.second.second }
+                    .map { it.first }
+            }
+            SmartContactSort.LONG_TIME -> {
+                // Smart Discovery: Order strictly by longest inactive contact (oldest last call timestamp ascending).
+                // Do NOT sort alphabetically.
+                filteredContacts
+                    .map { c -> c to getContactStats(c, lastTsMap, countMap) }
+                    .filter { it.second.first > 0L }
+                    .sortedBy { it.second.first }
+                    .map { it.first }
             }
             SmartContactSort.REDISCOVER -> {
-                filteredContacts.shuffled(java.util.Random(42))
+                // Smart Discovery: Order strictly dormant or uncontacted connections.
+                // Do NOT sort alphabetically.
+                filteredContacts
+                    .map { c -> c to getContactStats(c, lastTsMap, countMap) }
+                    .filter { it.second.second == 0 }
+                    .map { it.first }
             }
         }
     }
 
-    // Group contacts alphabetically by initial
-    val groupedContacts = remember(sortedContacts) {
-        sortedContacts.groupBy { contact ->
-            val displayName = contact.nickname?.ifBlank { null } ?: contact.name
-            val firstChar = displayName.trim().firstOrNull()?.uppercaseChar() ?: '#'
-            if (firstChar in 'A'..'Z') firstChar else '#'
-        }.let { groups ->
-            if (sortOrder == ContactSortOrder.ASCENDING) {
-                groups.toSortedMap(compareBy { if (it == '#') "ZZZ" else it.toString() })
-            } else {
-                groups.toSortedMap(compareByDescending { if (it == '#') "" else it.toString() })
+    // Group contacts alphabetically by initial (strictly for A-Z Directory mode)
+    val groupedContacts = remember(sortedContacts, smartSortBy, sortBy, sortOrder) {
+        if (smartSortBy != SmartContactSort.A_Z) {
+            emptyMap<Char, List<DeviceContact>>()
+        } else {
+            sortedContacts.groupBy { contact ->
+                val nameToUse = if (sortBy == ContactSortBy.LAST_NAME) {
+                    val parts = contact.name.trim().split(Regex("\\s+"))
+                    if (parts.size > 1) parts.last() else parts.first()
+                } else {
+                    contact.nickname?.ifBlank { null } ?: contact.name
+                }
+                val firstChar = nameToUse.trim().firstOrNull()?.uppercaseChar() ?: '#'
+                if (firstChar in 'A'..'Z') firstChar else '#'
+            }.let { groups ->
+                if (sortOrder == ContactSortOrder.ASCENDING) {
+                    groups.toSortedMap(compareBy { if (it == '#') "ZZZ" else it.toString() })
+                } else {
+                    groups.toSortedMap(compareByDescending { if (it == '#') "" else it.toString() })
+                }
             }
         }
     }
@@ -401,78 +486,128 @@ fun ContactsScreen(
             }
         }
 
-        // Sorting controls bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "${sortedContacts.size} contacts",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
+        // Sorting controls (Directory mode) vs Discovery Parameter Order indicator (Smart Discovery)
+        if (smartSortBy == SmartContactSort.A_Z) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            sortBy = if (sortBy == ContactSortBy.FIRST_NAME) ContactSortBy.LAST_NAME else ContactSortBy.FIRST_NAME
-                        }
+                Text(
+                    text = "${sortedContacts.size} contacts",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                sortBy = if (sortBy == ContactSortBy.FIRST_NAME) ContactSortBy.LAST_NAME else ContactSortBy.FIRST_NAME
+                            }
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = if (sortBy == ContactSortBy.FIRST_NAME) "Sort: First Name" else "Sort: Last Name",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                text = if (sortBy == ContactSortBy.FIRST_NAME) "Sort: First Name" else "Sort: Last Name",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                sortOrder = if (sortOrder == ContactSortOrder.ASCENDING) ContactSortOrder.DESCENDING else ContactSortOrder.ASCENDING
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (sortOrder == ContactSortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                text = if (sortOrder == ContactSortOrder.ASCENDING) "A → Z" else "Z → A",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
                 }
+            }
+        } else {
+            // In Smart Discovery mode: do NOT sort alphabetically; show active discovery order parameter
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${sortedContacts.size} surfaced",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            sortOrder = if (sortOrder == ContactSortOrder.ASCENDING) ContactSortOrder.DESCENDING else ContactSortOrder.ASCENDING
-                        }
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        val (paramIcon, paramLabel) = when (smartSortBy) {
+                            SmartContactSort.RECENT -> Icons.Default.Schedule to "Order: Call Recency"
+                            SmartContactSort.FREQUENT -> Icons.Default.LocalFireDepartment to "Order: Call Frequency"
+                            SmartContactSort.LONG_TIME -> Icons.Default.History to "Order: Longest Inactive"
+                            SmartContactSort.REDISCOVER -> Icons.Default.Explore to "Order: Uncontacted / Dormant"
+                            else -> Icons.Default.FilterList to "Order: Discovery Parameters"
+                        }
                         Icon(
-                            imageVector = if (sortOrder == ContactSortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                            imageVector = paramIcon,
                             contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = if (sortOrder == ContactSortOrder.ASCENDING) "A → Z" else "Z → A",
+                            text = paramLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -485,7 +620,7 @@ fun ContactsScreen(
                 .fillMaxSize()
                 .weight(1f)
         ) {
-            if (filteredContacts.isEmpty()) {
+            if (sortedContacts.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -494,19 +629,44 @@ fun ContactsScreen(
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Person,
+                            imageVector = when (smartSortBy) {
+                                SmartContactSort.RECENT -> Icons.Default.Schedule
+                                SmartContactSort.FREQUENT -> Icons.Default.LocalFireDepartment
+                                SmartContactSort.LONG_TIME -> Icons.Default.History
+                                SmartContactSort.REDISCOVER -> Icons.Default.Explore
+                                else -> Icons.Default.Person
+                            },
                             contentDescription = null,
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
+                        val emptyTitle = when {
+                            searchQuery.isNotBlank() -> "No contacts match '$searchQuery'"
+                            smartSortBy == SmartContactSort.RECENT -> "No recent call activity found"
+                            smartSortBy == SmartContactSort.FREQUENT -> "No call frequency history found"
+                            smartSortBy == SmartContactSort.LONG_TIME -> "No past calls found to catch up on"
+                            smartSortBy == SmartContactSort.REDISCOVER -> "All contacts have had interactions"
+                            effectiveContacts.isEmpty() -> "No contacts found on device"
+                            else -> "No contacts found"
+                        }
                         Text(
-                            text = if (searchQuery.isBlank()) "No contacts found on device" else "No contacts match '$searchQuery'",
+                            text = emptyTitle,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
+                        if (smartSortBy != SmartContactSort.A_Z) {
+                            OutlinedButton(
+                                onClick = { smartSortBy = SmartContactSort.A_Z },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                            ) {
+                                Text("View All Contacts", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             } else {
@@ -677,6 +837,7 @@ fun ContactsScreen(
                             }
                         }
                     } else {
+                        val (lastTsMap, countMap) = contactCallStats
                         items(sortedContacts, key = { it.contactId?.toString() ?: (it.name + "_" + it.phoneNumber) }) { contact ->
                             val isFav = favorites.any { fav ->
                                 val normF = fav.phoneNumber.replace(Regex("[^0-9+]"), "")
@@ -686,10 +847,20 @@ fun ContactsScreen(
                                 (!contact.nickname.isNullOrBlank() && fav.name.equals(contact.nickname, ignoreCase = true))
                             }
 
+                            val (lastTs, count) = getContactStats(contact, lastTsMap, countMap)
+                            val badge = when (smartSortBy) {
+                                SmartContactSort.RECENT -> if (lastTs > 0L) "🕒 ${formatRelativeTime(lastTs)}" else null
+                                SmartContactSort.FREQUENT -> if (count > 0) "🔥 $count call${if (count > 1) "s" else ""}" else null
+                                SmartContactSort.LONG_TIME -> if (lastTs > 0L) "🕰️ ${formatRelativeTime(lastTs)}" else null
+                                SmartContactSort.REDISCOVER -> "🎲 Dormant"
+                                else -> null
+                            }
+
                             ContactRowItem(
                                 contact = contact,
                                 searchQuery = searchQuery,
                                 isFavorite = isFav,
+                                discoveryBadge = badge,
                                 onItemClick = { contactForDetailsSheet = contact },
                                 onRequestCall = {
                                     val normContactNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
@@ -898,6 +1069,7 @@ private fun ContactRowItem(
     contact: DeviceContact,
     searchQuery: String,
     isFavorite: Boolean,
+    discoveryBadge: String? = null,
     onItemClick: () -> Unit,
     onRequestCall: () -> Unit,
     onCallDirect: (String) -> Unit,
@@ -1015,6 +1187,20 @@ private fun ContactRowItem(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        if (discoveryBadge != null) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = discoveryBadge,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }
                         }

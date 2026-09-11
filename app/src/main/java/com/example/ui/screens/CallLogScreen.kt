@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.RecentCall
 import com.example.ui.components.ContactDetailsBottomSheet
+import com.example.ui.components.WhatsAppIcon
 import com.example.util.ContactPhoneNumber
 import com.example.util.DeviceContact
 import java.text.SimpleDateFormat
@@ -282,7 +283,8 @@ fun CallLogScreen(
             val matchesFilter = when (selectedFilter) {
                 "MISSED" -> call.callType == 3
                 "INCOMING" -> call.callType == 1
-                "OUTGOING" -> call.callType == 2
+                "OUTGOING" -> call.callType == 2 && call.callReason?.contains("WhatsApp", ignoreCase = true) != true
+                "WHATSAPP" -> call.callReason?.contains("WhatsApp", ignoreCase = true) == true
                 "SPAM" -> group.isSpam
                 "RULES" -> {
                     val normCallNum = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
@@ -412,6 +414,7 @@ fun CallLogScreen(
                     "MISSED" to "Missed",
                     "INCOMING" to "In",
                     "OUTGOING" to "Out",
+                    "WHATSAPP" to "WhatsApp",
                     "SPAM" to "Spam",
                     "RULES" to "Rules",
                     "NOTES" to "Notes"
@@ -523,9 +526,11 @@ private fun CallLogItem(
     onDeleteCallsForNumber: () -> Unit = {}
 ) {
     val call = group.primaryCall
-    val (typeIcon, typeColor, typeLabel) = when (call.callType) {
-        1 -> Triple(Icons.AutoMirrored.Filled.CallReceived, Color(0xFF16A34A), "Incoming")
-        2 -> Triple(Icons.AutoMirrored.Filled.CallMade, Color(0xFF2563EB), "Outgoing")
+    val isWhatsApp = call.callReason?.contains("WhatsApp", ignoreCase = true) == true
+    val (typeIcon, typeColor, typeLabel) = when {
+        isWhatsApp -> Triple(Icons.AutoMirrored.Filled.CallMade, Color(0xFF25D366), "WhatsApp Call")
+        call.callType == 1 -> Triple(Icons.AutoMirrored.Filled.CallReceived, Color(0xFF16A34A), "Incoming")
+        call.callType == 2 -> Triple(Icons.AutoMirrored.Filled.CallMade, Color(0xFF2563EB), "Outgoing")
         else -> Triple(Icons.AutoMirrored.Filled.CallMissed, Color(0xFFDC2626), "Missed")
     }
 
@@ -537,7 +542,7 @@ private fun CallLogItem(
         else {
             val targetDigits = highlightNumber.filter { it.isDigit() }.takeLast(10)
             val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
-            callDigits == targetDigits || call.phoneNumber == highlightNumber
+            (targetDigits.isNotBlank() && callDigits == targetDigits) || call.phoneNumber == highlightNumber
         }
     }
 
@@ -548,14 +553,16 @@ private fun CallLogItem(
             .testTag("call_item_${call.id}"),
         colors = CardDefaults.cardColors(
             containerColor = if (isHighlighted) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+            } else if (isWhatsApp) {
+                Color(0xFF25D366).copy(alpha = 0.08f)
             } else if (group.isSpam) {
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
             } else {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             }
         ),
-        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
@@ -574,7 +581,7 @@ private fun CallLogItem(
                 Box(modifier = Modifier.size(36.dp)) {
                     Surface(
                         shape = CircleShape,
-                        color = if (group.isSpam) Color(0xFFDC2626).copy(alpha = 0.15f) else typeColor.copy(alpha = 0.15f),
+                        color = if (group.isSpam) Color(0xFFDC2626).copy(alpha = 0.15f) else if (isWhatsApp) Color(0xFF25D366).copy(alpha = 0.18f) else typeColor.copy(alpha = 0.15f),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         if (group.isSpam) {
@@ -598,8 +605,14 @@ private fun CallLogItem(
                                 Text(
                                     text = call.callerName.take(1).uppercase(),
                                     fontWeight = FontWeight.Bold,
-                                    color = typeColor,
+                                    color = if (isWhatsApp) Color(0xFF15803D) else typeColor,
                                     fontSize = 16.sp
+                                )
+                            }
+                        } else if (isWhatsApp) {
+                            Box(contentAlignment = Alignment.Center) {
+                                WhatsAppIcon(
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         } else {
@@ -614,7 +627,22 @@ private fun CallLogItem(
                         }
                     }
 
-                    if (!call.photoUri.isNullOrBlank() || !call.callerName.isNullOrBlank()) {
+                    if (isWhatsApp) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF25D366),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .align(Alignment.BottomEnd)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                WhatsAppIcon(
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
+                        }
+                    } else if (!call.photoUri.isNullOrBlank() || !call.callerName.isNullOrBlank()) {
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surface,
@@ -639,7 +667,7 @@ private fun CallLogItem(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Line 1: Name / Number + Count Badge
+                    // Line 1: Name / Number + Count Badge + WhatsApp Badge + Missed Call Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -663,6 +691,51 @@ private fun CallLogItem(
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
+                            }
+                        }
+                        if (isWhatsApp) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF25D366).copy(alpha = 0.18f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    WhatsAppIcon(modifier = Modifier.size(11.dp))
+                                    Text(
+                                        text = "WhatsApp",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF15803D)
+                                    )
+                                }
+                            }
+                        }
+                        if (isHighlighted) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFDC2626)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.CallMissed,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = "Missed Call",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                         if (group.isSpam) {
@@ -692,7 +765,14 @@ private fun CallLogItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )
-                        if (call.durationSeconds > 0) {
+                        if (isWhatsApp) {
+                            Text(
+                                text = "• WhatsApp Call",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF15803D)
+                            )
+                        } else if (call.durationSeconds > 0) {
                             val mins = call.durationSeconds / 60
                             val secs = call.durationSeconds % 60
                             val durText = if (mins > 0) "${mins}m ${secs}s" else "${secs}s"

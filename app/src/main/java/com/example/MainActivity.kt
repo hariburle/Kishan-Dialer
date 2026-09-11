@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
 
         val tabExtra = intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
         handleDialIntent(intent)
+        viewModel.handleIncomingIntent(intent)
         if (intent.getBooleanExtra("EXTRA_IN_CALL", false)) {
             viewModel.maximizeCall()
         }
@@ -161,6 +162,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDialIntent(intent)
+        viewModel.handleIncomingIntent(intent)
         if (intent.getBooleanExtra("EXTRA_IN_CALL", false)) {
             viewModel.maximizeCall()
         }
@@ -171,7 +173,12 @@ class MainActivity : ComponentActivity() {
         CallManager.isCallUiForegrounded = true
         com.example.telecom.OngoingCallNotificationHelper.cancelCallNotification(this)
         viewModel.refreshDefaultDialerStatus()
-        viewModel.refreshContacts()
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            viewModel.refreshContacts()
+        }
+        if (checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
+            viewModel.refreshRecentCalls()
+        }
     }
 
     override fun onPause() {
@@ -370,6 +377,30 @@ fun MainAppContent(
 
     var hasAppliedDefaultTab by remember { mutableStateOf(false) }
     var highlightNumber by remember { mutableStateOf<String?>(null) }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    val pendingNavTab by viewModel.pendingNavTab.collectAsStateWithLifecycle()
+    val pendingHighlightNumber by viewModel.pendingHighlightNumber.collectAsStateWithLifecycle()
+
+    // Clear focus on startup and tab change so keyboard never pops unexpectedly
+    LaunchedEffect(selectedTab) {
+        focusManager.clearFocus()
+    }
+
+    LaunchedEffect(pendingNavTab) {
+        pendingNavTab?.let { targetPage ->
+            navigateToTab(targetPage)
+            viewModel.clearPendingNavTab()
+        }
+    }
+
+    LaunchedEffect(pendingHighlightNumber) {
+        if (!pendingHighlightNumber.isNullOrBlank()) {
+            highlightNumber = pendingHighlightNumber
+            selectedTab = 1
+            pagerState.scrollToPage(1)
+        }
+    }
 
     val activity = context as? android.app.Activity
     LaunchedEffect(activity?.intent) {
@@ -418,6 +449,8 @@ fun MainAppContent(
     ) {
         viewModel.refreshDefaultDialerStatus()
         viewModel.refreshSimCards()
+        viewModel.refreshRecentCalls()
+        viewModel.refreshContacts()
         viewModel.syncWithDeviceContacts()
     }
 

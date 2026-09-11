@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,9 +50,11 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -124,6 +127,8 @@ fun ContactDetailsBottomSheet(
     onCreateRule: (String) -> Unit,
     onSyncToPhone: (() -> Unit)? = null,
     onEditContact: (name: String, phoneNumber: String, label: String, nickname: String?) -> Unit = { _, _, _, _ -> },
+    getPreferredCallingMode: (String) -> String = { "cellular" },
+    onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -206,7 +211,13 @@ fun ContactDetailsBottomSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = { showEditDialog = true },
+                        onClick = {
+                            if (contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly) {
+                                ContactHelper.launchContactEditor(context, contact)
+                            } else {
+                                showEditDialog = true
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -378,24 +389,13 @@ fun ContactDetailsBottomSheet(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    val isPhoneContact = contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly
                     OutlinedButton(
                         onClick = {
-                            val cId = contact.contactId
-                            val intent = if (cId != null && cId > 0) {
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    data = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, cId)
-                                }
+                            if (isPhoneContact) {
+                                ContactHelper.launchContactEditor(context, contact)
                             } else {
-                                Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
-                                    type = ContactsContract.Contacts.CONTENT_ITEM_TYPE
-                                    putExtra(ContactsContract.Intents.Insert.NAME, contact.name)
-                                    putExtra(ContactsContract.Intents.Insert.PHONE, contact.phoneNumber)
-                                }
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "Unable to open Phone Contacts app", Toast.LENGTH_SHORT).show()
+                                showEditDialog = true
                             }
                         },
                         modifier = Modifier
@@ -411,7 +411,7 @@ fun ContactDetailsBottomSheet(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Edit in Phone Contacts",
+                            text = if (isPhoneContact) "Edit in Phone Contacts" else "Edit Local Contact",
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
@@ -504,7 +504,7 @@ fun ContactDetailsBottomSheet(
                             (contact.phoneNumbers.size == 1)
                         )
 
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(
@@ -528,147 +528,252 @@ fun ContactDetailsBottomSheet(
                                     if (isThisNumberFavorite) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                                     else Color.Transparent
                                 )
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            val containerBg = MaterialTheme.colorScheme.surfaceVariant
+                            val containerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                            // Row 1: Number + Label (Left) and Action Buttons (Right)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = pn.label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+
+                                        if (isThisNumberFavorite) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Color(0xFFF59E0B),
+                                                contentColor = Color.White
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Star,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(10.dp)
+                                                    )
+                                                    Text(
+                                                        text = if (contact.phoneNumbers.size > 1) "DEFAULT" else "FAVORITE",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(2.dp))
+
+                                    Text(
+                                        text = pn.number,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Text(
-                                        text = pn.label,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    val isMobileLabel = pn.label.isBlank() || pn.label.equals("mobile", ignoreCase = true) || pn.label.contains("mobile", ignoreCase = true)
+                                    val currentPrefMode = getPreferredCallingMode(pn.number)
+                                    val isWaPref = currentPrefMode == "whatsapp"
+                                    val isPhonePref = currentPrefMode == "cellular"
 
-                                    if (isThisNumberFavorite) {
+                                    // 1. Star / Favorite toggle button
+                                    IconButton(
+                                        onClick = {
+                                            if (isThisNumberFavorite) {
+                                                onToggleFavorite()
+                                                Toast.makeText(context, "Removed from Favorites", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                currentDefaultNumber = pn.number
+                                                onSetAsDefaultNumber(pn.number, pn.label)
+                                                Toast.makeText(context, "★ Added to Favorites", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .testTag("star_toggle_${pn.number}")
+                                    ) {
                                         Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = Color(0xFFF59E0B),
-                                            contentColor = Color.White
+                                            shape = CircleShape,
+                                            color = containerBg,
+                                            border = containerBorder,
+                                            modifier = Modifier.fillMaxSize()
                                         ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                            ) {
+                                            Box(contentAlignment = Alignment.Center) {
                                                 Icon(
-                                                    imageVector = Icons.Default.Star,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(10.dp)
+                                                    imageVector = if (isThisNumberFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                                    contentDescription = if (isThisNumberFavorite) "Remove Favorite" else "Add Favorite",
+                                                    tint = if (isThisNumberFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(16.dp)
                                                 )
-                                                Text(
-                                                    text = if (contact.phoneNumbers.size > 1) "DEFAULT" else "FAVORITE",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.ExtraBold
+                                            }
+                                        }
+                                    }
+
+                                    // 2. SMS Button
+                                    IconButton(
+                                        onClick = {
+                                            val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${pn.number}"))
+                                            context.startActivity(smsIntent)
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = containerBg,
+                                            border = containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.Message,
+                                                    contentDescription = "SMS",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 3 & 4. WhatsApp Message & WhatsApp Call (Only if Mobile)
+                                    if (isMobileLabel) {
+                                        IconButton(
+                                            onClick = {
+                                                ContactHelper.launchWhatsAppMessage(context, pn.number)
+                                            },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = containerBg,
+                                                border = containerBorder,
+                                                modifier = Modifier.fillMaxSize()
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Chat,
+                                                        contentDescription = "WhatsApp Message",
+                                                        tint = Color(0xFF25D366),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                ContactHelper.launchWhatsAppCall(context, pn.number)
+                                            },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (isWaPref) Color(0xFF25D366) else containerBg,
+                                                border = if (isWaPref) null else containerBorder,
+                                                modifier = Modifier.fillMaxSize()
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    WhatsAppIcon(modifier = Modifier.size(20.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 5. Quick Phone Call Button
+                                    IconButton(
+                                        onClick = {
+                                            onDismiss()
+                                            onCallNumber(pn.number)
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (isPhonePref) Color(0xFF16A34A) else containerBg,
+                                            border = if (isPhonePref) null else containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Call,
+                                                    contentDescription = "Phone Call",
+                                                    tint = if (isPhonePref) Color.White else Color(0xFF16A34A),
+                                                    modifier = Modifier.size(16.dp)
                                                 )
                                             }
                                         }
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(2.dp))
-
-                                Text(
-                                    text = pn.number,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
                             }
 
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Row 2: Preferred Channel Selector (Teach mode without placing calls)
+                            val currentPref = getPreferredCallingMode(pn.number)
                             Row(
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                val isMobileLabel = pn.label.isBlank() || pn.label.equals("mobile", ignoreCase = true) || pn.label.contains("mobile", ignoreCase = true)
-
-                                // 1. Star / Favorite toggle button
-                                IconButton(
-                                    onClick = {
-                                        if (isThisNumberFavorite) {
-                                            onToggleFavorite()
-                                            Toast.makeText(context, "Removed from Favorites", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            currentDefaultNumber = pn.number
-                                            onSetAsDefaultNumber(pn.number, pn.label)
-                                            Toast.makeText(context, "★ Added to Favorites", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .testTag("star_toggle_${pn.number}")
-                                ) {
-                                    Icon(
-                                        imageVector = if (isThisNumberFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = if (isThisNumberFavorite) "Remove Favorite" else "Add Favorite",
-                                        tint = if (isThisNumberFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                // 2. SMS Button
-                                IconButton(
-                                    onClick = {
-                                        val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${pn.number}"))
-                                        context.startActivity(smsIntent)
-                                    },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Message,
-                                        contentDescription = "SMS",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                // 3 & 4. WhatsApp Message & WhatsApp Call (Only if Mobile)
-                                if (isMobileLabel) {
-                                    IconButton(
+                                Text(
+                                    text = "Preferred Channel:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilterChip(
+                                        selected = currentPref == "cellular",
                                         onClick = {
-                                            ContactHelper.launchWhatsAppMessage(context, pn.number)
+                                            onSaveLearnedCallMode(pn.number, "cellular")
+                                            Toast.makeText(context, "★ Preferred mode set: Phone", Toast.LENGTH_SHORT).show()
                                         },
-                                        modifier = Modifier.size(34.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Chat,
-                                            contentDescription = "WhatsApp Message",
-                                            tint = Color(0xFF25D366),
-                                            modifier = Modifier.size(18.dp)
+                                        label = { Text("Phone", fontSize = 10.5.sp) },
+                                        leadingIcon = if (currentPref == "cellular") {
+                                            { Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                        } else null,
+                                        modifier = Modifier.height(26.dp)
+                                    )
+                                    FilterChip(
+                                        selected = currentPref == "whatsapp",
+                                        onClick = {
+                                            onSaveLearnedCallMode(pn.number, "whatsapp")
+                                            Toast.makeText(context, "★ Preferred mode set: WhatsApp", Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("WhatsApp", fontSize = 10.5.sp) },
+                                        leadingIcon = if (currentPref == "whatsapp") {
+                                            { Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                        } else null,
+                                        modifier = Modifier.height(26.dp)
+                                    )
+                                    if (currentPref == "cellular" || currentPref == "whatsapp") {
+                                        AssistChip(
+                                            onClick = {
+                                                onSaveLearnedCallMode(pn.number, "ask")
+                                                Toast.makeText(context, "★ Preference reset to Ask & Learn", Toast.LENGTH_SHORT).show()
+                                            },
+                                            label = { Text("Reset", fontSize = 9.5.sp) },
+                                            modifier = Modifier.height(26.dp)
                                         )
                                     }
-
-                                    IconButton(
-                                        onClick = {
-                                            ContactHelper.launchWhatsAppCall(context, pn.number)
-                                        },
-                                        modifier = Modifier.size(34.dp)
-                                    ) {
-                                        WhatsAppIcon(modifier = Modifier.size(24.dp))
-                                    }
-                                }
-
-                                // 5. Quick Call Button
-                                FilledIconButton(
-                                    onClick = {
-                                        onDismiss()
-                                        onCallNumber(pn.number)
-                                    },
-                                    modifier = Modifier.size(34.dp),
-                                    colors = IconButtonDefaults.filledIconButtonColors(
-                                        containerColor = Color(0xFF16A34A),
-                                        contentColor = Color.White
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Call,
-                                        contentDescription = "Phone Call",
-                                        modifier = Modifier.size(16.dp)
-                                    )
                                 }
                             }
                         }

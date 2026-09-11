@@ -20,6 +20,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -343,17 +345,19 @@ fun MainAppContent(
     val favoriteCardStyle by viewModel.favoriteCardStyle.collectAsStateWithLifecycle()
     val swipeToSwitchPanels by viewModel.swipeToSwitchPanels.collectAsStateWithLifecycle()
 
-    val pagerState = rememberPagerState(initialPage = selectedTab) { 5 }
-
-    LaunchedEffect(selectedTab) {
-        if (pagerState.currentPage != selectedTab) {
-            pagerState.animateScrollToPage(selectedTab)
-        }
-    }
+    val coroutineScope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = selectedTab.coerceIn(0, 4)) { 5 }
 
     LaunchedEffect(pagerState.currentPage) {
         if (selectedTab != pagerState.currentPage) {
             selectedTab = pagerState.currentPage
+        }
+    }
+
+    fun navigateToTab(targetPage: Int) {
+        selectedTab = targetPage
+        coroutineScope.launch {
+            pagerState.scrollToPage(targetPage)
         }
     }
 
@@ -437,28 +441,28 @@ fun MainAppContent(
                 NavigationBar(modifier = Modifier.testTag("bottom_nav_bar")) {
                     NavigationBarItem(
                         selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
+                        onClick = { navigateToTab(0) },
                         icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
                         label = { Text("Favorites") },
                         modifier = Modifier.testTag("nav_favorites")
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = { navigateToTab(1) },
                         icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
                         label = { Text("Recents") },
                         modifier = Modifier.testTag("nav_recents")
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
+                        onClick = { navigateToTab(2) },
                         icon = { Icon(Icons.Default.Dialpad, contentDescription = "Keypad") },
                         label = { Text("Keypad") },
                         modifier = Modifier.testTag("nav_keypad")
                     )
                     NavigationBarItem(
                         selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
+                        onClick = { navigateToTab(3) },
                         icon = { Icon(Icons.Default.Contacts, contentDescription = "Contacts") },
                         label = { Text("Contacts") },
                         modifier = Modifier.testTag("nav_contacts")
@@ -467,7 +471,7 @@ fun MainAppContent(
                         selected = selectedTab == 4,
                         onClick = {
                             ruleNumberToCreate = null
-                            selectedTab = 4
+                            navigateToTab(4)
                         },
                         icon = { Icon(Icons.Default.SmartToy, contentDescription = "Rules") },
                         label = { Text("Rules") },
@@ -484,6 +488,7 @@ fun MainAppContent(
                 HorizontalPager(
                     state = pagerState,
                     userScrollEnabled = swipeToSwitchPanels,
+                    beyondViewportPageCount = 2,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     when (page) {
@@ -495,6 +500,7 @@ fun MainAppContent(
                         favoriteCardStyle = favoriteCardStyle,
                         onSetFavoriteCardStyle = { viewModel.setFavoriteCardStyle(it) },
                         getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
+                        onSaveLearnedCallMode = { num, mode -> viewModel.saveLearnedCallMode(num, mode) },
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
@@ -552,6 +558,8 @@ fun MainAppContent(
                         favorites = favorites,
                         highlightNumber = highlightNumber,
                         isSpamNumber = { num -> viewModel.isSpamNumber(num) },
+                        getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
+                        onSaveLearnedCallMode = { num, mode -> viewModel.saveLearnedCallMode(num, mode) },
                         onCallBack = { num ->
                             viewModel.initiateCall(context, num)
                         },
@@ -621,6 +629,8 @@ fun MainAppContent(
                         deviceContacts = deviceContacts,
                         onRefreshContacts = { viewModel.refreshContacts() },
                         onPlaceWhatsAppCall = { num -> viewModel.placeWhatsAppCall(context, num) },
+                        getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
+                        onSaveLearnedCallMode = { num, mode -> viewModel.saveLearnedCallMode(num, mode) },
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2

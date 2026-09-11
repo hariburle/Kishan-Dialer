@@ -8,6 +8,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -78,6 +79,8 @@ fun ContactsScreen(
     deviceContacts: List<DeviceContact> = emptyList(),
     onRefreshContacts: () -> Unit = {},
     onPlaceWhatsAppCall: (String) -> Unit = {},
+    getPreferredCallingMode: (String) -> String = { "cellular" },
+    onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -609,7 +612,8 @@ fun ContactsScreen(
                                 onPlaceWhatsAppCall = onPlaceWhatsAppCall,
                                 onSyncToPhone = {
                                     onSyncContactToPhone(contact)
-                                }
+                                },
+                                getPreferredCallingMode = getPreferredCallingMode
                             )
                         }
                     }
@@ -761,6 +765,8 @@ fun ContactsScreen(
             onSyncToPhone = {
                 onSyncContactToPhone(detailContact)
             },
+            getPreferredCallingMode = getPreferredCallingMode,
+            onSaveLearnedCallMode = onSaveLearnedCallMode,
             onEditContact = { name, number, label, nickname ->
                 onUpdateContact(detailContact.phoneNumber, name, number, label, nickname)
                 contactForDetailsSheet = null
@@ -797,7 +803,8 @@ private fun ContactRowItem(
     onCreateRule: (String) -> Unit,
     onToggleFavorite: () -> Unit,
     onPlaceWhatsAppCall: (String) -> Unit = {},
-    onSyncToPhone: () -> Unit = {}
+    onSyncToPhone: () -> Unit = {},
+    getPreferredCallingMode: (String) -> String = { "cellular" }
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -887,7 +894,7 @@ private fun ContactRowItem(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = contact.nickname?.ifBlank { null } ?: contact.name,
+                            text = contact.name,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -998,20 +1005,36 @@ private fun ContactRowItem(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
+                                val prefMode = getPreferredCallingMode(pn.number)
+                                val isWaPref = prefMode == "whatsapp"
+                                val isPhonePref = prefMode == "cellular"
+
+                                val containerBg = MaterialTheme.colorScheme.surfaceVariant
+                                val containerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
                                 // 1. Copy Number (Far Left)
                                 IconButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(pn.number))
                                         Toast.makeText(context, "Copied ${pn.number}", Toast.LENGTH_SHORT).show()
                                     },
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Number",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = containerBg,
+                                        border = containerBorder,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Number",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
 
                                 if (isMobile) {
@@ -1020,14 +1043,23 @@ private fun ContactRowItem(
                                         onClick = {
                                             ContactHelper.launchWhatsAppMessage(context, pn.number)
                                         },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.Chat,
-                                            contentDescription = "WhatsApp Chat",
-                                            tint = Color(0xFF25D366),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = containerBg,
+                                            border = containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                                                    contentDescription = "WhatsApp Chat",
+                                                    tint = Color(0xFF25D366),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                     }
 
                                     // 3. WhatsApp Call (Middle)
@@ -1035,40 +1067,59 @@ private fun ContactRowItem(
                                         onClick = {
                                             onPlaceWhatsAppCall(pn.number)
                                         },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
-                                        WhatsAppIcon(modifier = Modifier.size(20.dp))
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (isWaPref) Color(0xFF25D366) else containerBg,
+                                            border = if (isWaPref) BorderStroke(2.dp, Color.White) else containerBorder,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                WhatsAppIcon(modifier = Modifier.size(22.dp))
+                                            }
+                                        }
                                     }
                                 }
 
                                 // 4. SMS Message (2nd from Right)
                                 IconButton(
                                     onClick = { onSmsClick(pn.number) },
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Message,
-                                        contentDescription = "SMS Text",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = containerBg,
+                                        border = containerBorder,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Message,
+                                                contentDescription = "SMS Text",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
 
-                                // 5. Phone Call (Far Right - Closest to thumb resting position!)
+                                // 5. Phone Call (Far Right)
                                 IconButton(
                                     onClick = { onCallDirect(pn.number) },
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = Color(0xFF16A34A).copy(alpha = 0.15f),
+                                        color = if (isPhonePref) Color(0xFF16A34A) else containerBg,
+                                        border = if (isPhonePref) BorderStroke(2.dp, Color.White) else containerBorder,
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.Call,
                                                 contentDescription = "Phone Call",
-                                                tint = Color(0xFF16A34A),
+                                                tint = if (isPhonePref) Color.White else Color(0xFF16A34A),
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }

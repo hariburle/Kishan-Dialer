@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,8 +36,11 @@ import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhoneForwarded
 import androidx.compose.material.icons.filled.SmartToy
+import android.widget.Toast
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -76,6 +83,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.components.ContactPickerDialog
 import com.example.util.DeviceContact
 import java.text.SimpleDateFormat
@@ -116,6 +124,7 @@ fun RulesScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showHistoryDialog by rememberSaveable { mutableStateOf(false) }
     var showSpamDialog by remember { mutableStateOf(false) }
@@ -141,6 +150,17 @@ fun RulesScreen(
         }
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    val subPagerState = rememberPagerState(initialPage = selectedTab.coerceIn(0, 1)) { 2 }
+
+    LaunchedEffect(subPagerState.currentPage) {
+        if (selectedTab != subPagerState.currentPage) {
+            selectedTab = subPagerState.currentPage
+        }
+    }
+
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
+
     Box(modifier = modifier.fillMaxSize().testTag("rules_screen")) {
         Column(modifier = Modifier.fillMaxSize()) {
             TabRow(
@@ -149,49 +169,89 @@ fun RulesScreen(
             ) {
                 Tab(
                     selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    onClick = {
+                        selectedTab = 0
+                        coroutineScope.launch { subPagerState.animateScrollToPage(0) }
+                    },
                     text = { Text("Caller Rules (${rules.size})") },
                     icon = { Icon(Icons.Default.SmartToy, contentDescription = null) }
                 )
                 Tab(
                     selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    onClick = {
+                        selectedTab = 1
+                        coroutineScope.launch { subPagerState.animateScrollToPage(1) }
+                    },
                     text = { Text("Settings") },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) }
                 )
             }
 
-            if (selectedTab == 0) {
-                // Rules list
-                if (rules.isEmpty()) {
-                    Box(
+            HorizontalPager(
+                state = subPagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                if (page == 0) {
+                    // Rules Tab Content
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SmartToy,
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = "No Automation Rules",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "Add rules to auto-answer, dial DTMF extensions, or send SMS replies.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
+                        if (rules.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SmartToy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(56.dp),
+                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = "No Automation Rules Created Yet",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Create rules to auto-answer intercoms, dial DTMF extension codes, or auto-reply with SMS.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Button(
+                                        onClick = {
+                                            editingRule = CallerRule(
+                                                name = "New Automation Rule",
+                                                phoneNumberPattern = "",
+                                                isEnabled = true,
+                                                autoAnswer = true,
+                                                answerDelaySec = 1,
+                                                dtmfSequence = "9#",
+                                                dtmfDelayMs = 800,
+                                                sendSms = false,
+                                                smsMessage = "Automated reply sent.",
+                                                autoHangup = true,
+                                                hangupDelaySec = 2
+                                            )
+                                            showDialog = true
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Create First Rule", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        } else {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -215,6 +275,7 @@ fun RulesScreen(
                         }
                     }
                 }
+            }
             } else {
                 // Settings Tab
                 Column(
@@ -565,7 +626,7 @@ fun RulesScreen(
                                 )
                             }
                             OutlinedButton(
-                                onClick = onResetWhatsAppChoices,
+                                onClick = { showResetConfirmDialog = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("Reset Choices and Learn Memory", fontSize = 12.sp)
@@ -839,12 +900,12 @@ fun RulesScreen(
             }
         }
 
-        // Bottom Action Row for Add Rule and Execution History in Tab 0
-        if (selectedTab == 0) {
+        // Bottom Action Row for Add Rule and Execution History in Rules Page (Page 0)
+        if (subPagerState.currentPage == 0) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(bottom = 16.dp, end = 16.dp),
                 contentAlignment = Alignment.BottomEnd
             ) {
                 Row(
@@ -858,7 +919,7 @@ fun RulesScreen(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    FloatingActionButton(
+                    ExtendedFloatingActionButton(
                         onClick = {
                             editingRule = CallerRule(
                                 name = "New Automation Rule",
@@ -875,12 +936,12 @@ fun RulesScreen(
                             )
                             showDialog = true
                         },
+                        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                        text = { Text("Create Rule", fontWeight = FontWeight.Bold) },
                         modifier = Modifier.testTag("add_rule_fab"),
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Rule")
-                    }
+                    )
                 }
             }
         }
@@ -953,6 +1014,43 @@ fun RulesScreen(
             onDismiss = { showSpamDialog = false }
         )
     }
+
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Reset All Learned Channels?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "This will clear all learned Phone vs WhatsApp calling choices for all contacts ($learnedChoicesCount contacts remembered). You can set preferences per contact again at any time.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onResetWhatsAppChoices()
+                        showResetConfirmDialog = false
+                        Toast.makeText(context, "★ Reset all learned choices", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Reset All")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
 }
 
 @Composable

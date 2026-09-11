@@ -178,6 +178,7 @@ fun FavoritesScreen(
     onUnignoreContact: (phoneNumber: String) -> Unit = {},
     onUpdateIgnoredContactTag: (phoneNumber: String, newTag: String, newName: String) -> Unit = { _, _, _ -> },
     getPreferredCallingMode: (String) -> String = { "cellular" },
+    onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     confirmFavoritesCall: Boolean = true,
     favoriteCardStyle: String = "bento",
     onSetFavoriteCardStyle: (String) -> Unit = {},
@@ -1220,6 +1221,8 @@ fun FavoritesScreen(
             onCreateRule = { num ->
                 onCreateRule(num)
             },
+            getPreferredCallingMode = getPreferredCallingMode,
+            onSaveLearnedCallMode = onSaveLearnedCallMode,
             onEditContact = { name, number, label, nickname ->
                 onUpdateContact(matchedContact.phoneNumber, name, number, label, nickname)
                 contactDetailsTarget = null
@@ -1577,8 +1580,8 @@ private fun FavoriteGridCard(
                     // Normal Mode: Action area tailored to selected design
                     when (cardDesign) {
                         FavCardDesign.MODERN_BENTO -> {
-                            if (preferredCallingMode == "ask") {
-                                // Ask & Learn mode: Dual dialers side-by-side
+                            if (preferredCallingMode == "ask" || preferredCallingMode == "ask_always") {
+                                // Ask & Learn or Ask Always mode: Dual dialers side-by-side
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1687,15 +1690,36 @@ private fun FavoriteGridCard(
                             }
                         }
                         FavCardDesign.QUICK_ACTION -> {
-                            // Quick-Action Tile: Prominent round call action button
+                            // Quick-Action Tile: Prominent round call action buttons
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (preferredCallingMode == "whatsapp") {
+                                if (preferredCallingMode == "ask" || preferredCallingMode == "ask_always") {
                                     FilledIconButton(
                                         onClick = onCall,
+                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = Color(0xFF16A34A),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Call, contentDescription = "Phone Call", modifier = Modifier.size(15.dp))
+                                    }
+                                    FilledIconButton(
+                                        onClick = onCallWhatsApp,
+                                        modifier = Modifier.size(30.dp).testTag("fav_wa_btn_${contact.id}"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = Color(0xFF25D366),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        WhatsAppIcon(modifier = Modifier.size(16.dp))
+                                    }
+                                } else if (preferredCallingMode == "whatsapp") {
+                                    FilledIconButton(
+                                        onClick = onCallWhatsApp,
                                         modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
                                         colors = IconButtonDefaults.filledIconButtonColors(
                                             containerColor = Color(0xFF25D366),
@@ -1723,41 +1747,63 @@ private fun FavoriteGridCard(
                             }
                         }
                         FavCardDesign.MATERIAL_YOU -> {
-                            // Expressive Material You: Tonal chip button
+                            // Expressive Material You: Tonal chip buttons
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(
-                                    onClick = onCall,
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = if (preferredCallingMode == "whatsapp") Color(0xFF25D366) else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .height(28.dp)
-                                        .testTag("fav_call_btn_${contact.id}")
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                if (preferredCallingMode == "ask" || preferredCallingMode == "ask_always") {
+                                    Surface(
+                                        onClick = onCall,
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.height(28.dp).testTag("fav_call_btn_${contact.id}")
                                     ) {
-                                        if (preferredCallingMode == "whatsapp") {
-                                            WhatsAppIcon(modifier = Modifier.size(14.dp))
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Call,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.size(13.dp)
-                                            )
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
+                                            Text(text = "Phone", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                                         }
-                                        Text(
-                                            text = "Call",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (preferredCallingMode == "whatsapp") Color.White else MaterialTheme.colorScheme.onPrimary
-                                        )
+                                    }
+                                    Surface(
+                                        onClick = onCallWhatsApp,
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = Color(0xFF25D366),
+                                        modifier = Modifier.height(28.dp).testTag("fav_wa_btn_${contact.id}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
+                                            WhatsAppIcon(modifier = Modifier.size(13.dp))
+                                            Text(text = "WhatsApp", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    }
+                                } else {
+                                    Surface(
+                                        onClick = if (preferredCallingMode == "whatsapp") onCallWhatsApp else onCall,
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = if (preferredCallingMode == "whatsapp") Color(0xFF25D366) else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.height(28.dp).testTag("fav_call_btn_${contact.id}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (preferredCallingMode == "whatsapp") {
+                                                WhatsAppIcon(modifier = Modifier.size(14.dp))
+                                                Text(text = "WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            } else {
+                                                Icon(imageVector = Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(13.dp))
+                                                Text(text = "Phone", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                            }
+                                        }
                                     }
                                 }
                             }

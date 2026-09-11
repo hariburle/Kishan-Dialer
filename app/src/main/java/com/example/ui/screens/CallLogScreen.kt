@@ -23,8 +23,11 @@ import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -105,6 +108,8 @@ fun CallLogScreen(
     onUpdateContact: (oldNum: String, name: String, number: String, label: String, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     onDeleteCall: (RecentCall) -> Unit = {},
     onDeleteCallsForNumber: (String) -> Unit = {},
+    getPreferredCallingMode: (String) -> String = { "cellular" },
+    onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var noteDialogCall by remember { mutableStateOf<RecentCall?>(null) }
@@ -146,6 +151,8 @@ fun CallLogScreen(
             onCreateRule = { num ->
                 onCreateRuleForNumber(num)
             },
+            getPreferredCallingMode = getPreferredCallingMode,
+            onSaveLearnedCallMode = onSaveLearnedCallMode,
             onEditContact = { name, number, label, nickname ->
                 onUpdateContact(matchedContact.phoneNumber, name, number, label, nickname)
                 contactDetailsTarget = null
@@ -258,12 +265,28 @@ fun CallLogScreen(
         groups
     }
 
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredGroupedCalls = remember(groupedCalls, searchQuery) {
+        if (searchQuery.isBlank()) groupedCalls
+        else {
+            val q = searchQuery.trim().lowercase()
+            groupedCalls.filter { group ->
+                val call = group.primaryCall
+                call.phoneNumber.contains(q) ||
+                (call.callerName != null && call.callerName.lowercase().contains(q)) ||
+                (call.callReason != null && call.callReason.lowercase().contains(q)) ||
+                (call.note != null && call.note.lowercase().contains(q)) ||
+                (call.communityTag != null && call.communityTag.lowercase().contains(q))
+            }
+        }
+    }
+
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-    androidx.compose.runtime.LaunchedEffect(highlightNumber, groupedCalls) {
-        if (!highlightNumber.isNullOrBlank() && groupedCalls.isNotEmpty()) {
+    androidx.compose.runtime.LaunchedEffect(highlightNumber, filteredGroupedCalls) {
+        if (!highlightNumber.isNullOrBlank() && filteredGroupedCalls.isNotEmpty()) {
             val targetDigits = highlightNumber.filter { it.isDigit() }.takeLast(10)
-            val index = groupedCalls.indexOfFirst {
+            val index = filteredGroupedCalls.indexOfFirst {
                 val callDigits = it.primaryCall.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
                 callDigits == targetDigits || it.primaryCall.phoneNumber == highlightNumber
             }
@@ -304,15 +327,65 @@ fun CallLogScreen(
             }
         }
     } else {
-        LazyColumn(
-            state = listState,
+        Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .testTag("call_log_list"),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            itemsIndexed(groupedCalls, key = { index, group -> "${group.primaryCall.id}_${group.primaryCall.timestamp}_$index" }) { _, group ->
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search by name or number") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear search",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .testTag("recents_search_input")
+            )
+
+            if (filteredGroupedCalls.isEmpty() && searchQuery.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No calls match \"$searchQuery\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().testTag("call_log_list"),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(filteredGroupedCalls, key = { index, group -> "${group.primaryCall.id}_${group.primaryCall.timestamp}_$index" }) { _, group ->
                 val callDigits = group.primaryCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
                 val isFav = favorites.any { fav ->
                     val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
@@ -370,6 +443,8 @@ fun CallLogScreen(
             }
         }
     }
+}
+}
 }
 
 @Composable
@@ -588,15 +663,33 @@ private fun CallLogItem(
                             maxLines = 1,
                             softWrap = false
                         )
-                        if (call.durationSeconds > 0) {
+
+                        // SIM Slot Badge or WhatsApp Badge
+                        val isWaCall = call.callReason?.contains("WhatsApp", ignoreCase = true) == true
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (isWaCall) Color(0xFF25D366).copy(alpha = 0.2f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                        ) {
                             Text(
-                                text = "• ${call.durationSeconds}s",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                softWrap = false
+                                text = if (isWaCall) "WhatsApp" else "SIM ${if (call.simSlot > 0) call.simSlot else 1}",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isWaCall) Color(0xFF166534) else MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                             )
                         }
+
+                        if (call.durationSeconds > 0) {
+                            val mins = call.durationSeconds / 60
+                            val secs = call.durationSeconds % 60
+                            val durText = if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
+                            Text(
+                                text = "• $durText",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                         // Call Type Distinct Pill
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -894,4 +987,3 @@ private fun CallLogItem(
             }
         }
     }
-}

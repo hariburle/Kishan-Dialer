@@ -720,6 +720,16 @@ class MainViewModel(
      * checking explicitly learned choices, international rules, or recent call history.
      */
     fun getPreferredCallingMode(phoneNumber: String): String {
+        // If mode is set to "never", override all preferred channels to cellular without wiping saved preferences!
+        if (_whatsAppCallMode.value == "never") {
+            return "cellular"
+        }
+
+        // If mode is set to "ask_always", return "ask_always" so both dialers are always shown
+        if (_whatsAppCallMode.value == "ask_always") {
+            return "ask_always"
+        }
+
         val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
         val digits = clean.filter { it.isDigit() }.takeLast(10)
 
@@ -743,6 +753,8 @@ class MainViewModel(
 
         return if (waCount > gsmCount && waCount > 0) {
             "whatsapp"
+        } else if (_whatsAppCallMode.value == "ask_learn") {
+            "ask"
         } else {
             "cellular"
         }
@@ -1035,6 +1047,10 @@ class MainViewModel(
             fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
             val cleanDigits = normDigits(phoneNumber)
             val currentList = repository.getAllFavoritesList()
+            val matchedContact = lookupContactByNumber(phoneNumber)
+                ?: deviceContacts.value.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
+            val nicknameToUse = matchedContact?.nickname?.ifBlank { null }
+
             val existing = currentList.firstOrNull {
                 (cleanDigits.length >= 7 && normDigits(it.phoneNumber) == cleanDigits) ||
                 it.name.equals(name.trim(), ignoreCase = true)
@@ -1043,23 +1059,25 @@ class MainViewModel(
                 // Update existing rather than creating duplicate
                 repository.updateFavorite(
                     existing.copy(
-                        name = name.trim(),
+                        name = matchedContact?.name ?: name.trim(),
+                        nickname = nicknameToUse ?: existing.nickname,
                         phoneNumber = phoneNumber.trim(),
                         label = label,
-                        photoUri = photoUri ?: existing.photoUri
+                        photoUri = photoUri ?: matchedContact?.photoUri ?: existing.photoUri
                     )
                 )
             } else {
                 val colors = listOf(0xFF2563EBL, 0xFF16A34AL, 0xFFDC2626L, 0xFFD97706L, 0xFF7C3AEDL, 0xFF0891B2L)
-                val color = colors[abs(name.hashCode()) % colors.size]
+                val color = colors[abs((matchedContact?.name ?: name).hashCode()) % colors.size]
                 val maxOrder = currentList.maxOfOrNull { it.sortOrder } ?: -1
                 repository.insertFavorite(
                     FavoriteContact(
-                        name = name.trim(),
+                        name = matchedContact?.name ?: name.trim(),
+                        nickname = nicknameToUse,
                         phoneNumber = phoneNumber.trim(),
                         label = label,
                         avatarColor = color,
-                        photoUri = photoUri,
+                        photoUri = photoUri ?: matchedContact?.photoUri,
                         sortOrder = maxOrder + 1
                     )
                 )

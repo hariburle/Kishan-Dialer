@@ -2,10 +2,13 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +44,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -821,74 +826,75 @@ fun DialerScreen(
             val isWaPreferred = waCallsCount > gsmCallsCount && waCallsCount > 0
             val isGsmPreferred = gsmCallsCount > waCallsCount && gsmCallsCount > 0
 
-            // Fixed 56.dp button size for both dial buttons so row height never changes and keypad keys never move
-            val dialBtnSize = 56.dp
+            val isDark = isSystemInDarkTheme()
+
+            // Distinct Brand Colors for Keypad Action Buttons
+            val phoneBg = if (isGsmPreferred || (!isGsmPreferred && !isWaPreferred)) Color(0xFF059669) else Color(0xFF059669).copy(alpha = if (isDark) 0.25f else 0.15f)
+            val phoneContent = if (isGsmPreferred || (!isGsmPreferred && !isWaPreferred)) Color.White else Color(0xFF059669)
+
+            val waBg = if (isWaPreferred || (!isGsmPreferred && !isWaPreferred)) Color(0xFF25D366) else Color(0xFF25D366).copy(alpha = if (isDark) 0.25f else 0.15f)
+            val waContent = if (isWaPreferred || (!isGsmPreferred && !isWaPreferred)) Color.White else Color(0xFF1E7E34)
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
-                modifier = Modifier.padding(vertical = 4.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 6.dp)
             ) {
-                // WhatsApp Voice Call Button with internal accent highlight when preferred
-                FilledIconButton(
-                    onClick = {
-                        onPlaceWhatsAppCall(number.ifBlank { "+91" })
-                    },
+                // Phone Call Hybrid Button (Icon + Text)
+                Button(
+                    onClick = { onPlaceCall(number, selectedCallReason) },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = phoneBg, contentColor = phoneContent),
+                    border = if (isGsmPreferred) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, phoneContent.copy(alpha = 0.3f)),
                     modifier = Modifier
-                        .size(dialBtnSize)
-                        .testTag("whatsapp_call_button"),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (isGsmPreferred) Color(0xFF25D366).copy(alpha = 0.85f) else Color(0xFF25D366),
-                        contentColor = Color.White
-                    )
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("dialer_call_button")
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        if (isWaPreferred) {
-                            // Highlight strictly WITHIN the circle of the button without changing button outer size
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(3.dp)
-                                    .border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape)
-                            )
-                        }
-                        WhatsAppIcon(
-                            modifier = Modifier.size(26.dp)
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Phone Call",
+                            tint = phoneContent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Phone Call",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = phoneContent
                         )
                     }
                 }
 
-                // Standard SIM GSM Call Button with internal accent highlight when preferred
-                FilledIconButton(
-                    onClick = { onPlaceCall(number, selectedCallReason) },
+                // WhatsApp Call Hybrid Button (Icon + Text)
+                Button(
+                    onClick = { onPlaceWhatsAppCall(number.ifBlank { "+91" }) },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = waBg, contentColor = waContent),
+                    border = if (isWaPreferred) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, waContent.copy(alpha = 0.3f)),
                     modifier = Modifier
-                        .size(dialBtnSize)
-                        .testTag("dialer_call_button"),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (isWaPreferred) Color(0xFF16A34A).copy(alpha = 0.85f) else Color(0xFF16A34A),
-                        contentColor = Color.White
-                    )
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("whatsapp_call_button")
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        if (isGsmPreferred) {
-                            // Highlight strictly WITHIN the circle of the button without changing button outer size
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(3.dp)
-                                    .border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape)
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Place Call",
-                            modifier = Modifier.size(26.dp)
+                        WhatsAppIcon(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "WhatsApp",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = waContent
                         )
                     }
                 }

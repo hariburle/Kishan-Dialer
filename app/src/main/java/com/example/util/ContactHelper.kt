@@ -1,5 +1,6 @@
 package com.example.util
 
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
@@ -26,6 +27,26 @@ data class DeviceContact(
 )
 
 object ContactHelper {
+
+    fun launchContactEditor(context: Context, contact: DeviceContact) {
+        val cId = contact.contactId
+        val intent = if (cId != null && cId > 0) {
+            Intent(Intent.ACTION_EDIT).apply {
+                data = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, cId)
+            }
+        } else {
+            Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+                type = ContactsContract.Contacts.CONTENT_ITEM_TYPE
+                putExtra(ContactsContract.Intents.Insert.NAME, contact.name)
+                putExtra(ContactsContract.Intents.Insert.PHONE, contact.phoneNumber)
+            }
+        }
+        try {
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(context, "Unable to open Phone Contacts editor", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun saveContactToDevice(context: Context, name: String, phoneNumber: String, label: String = "Mobile"): Boolean {
         return try {

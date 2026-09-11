@@ -540,11 +540,33 @@ class MainViewModel(
                     }
                 }
 
+                // Read persistent speed dial assignments from SharedPreferences
+                val savedSpeedDialsRaw = prefs.getStringSet("speed_dial_assignments", emptySet()) ?: emptySet()
+                val savedSpeedDialByDigits = mutableMapOf<String, Int>()
+                val savedSpeedDialByName = mutableMapOf<String, Int>()
+                savedSpeedDialsRaw.forEach { entry ->
+                    val parts = entry.split(":")
+                    if (parts.size >= 2) {
+                        val slot = parts[0].toIntOrNull()
+                        val numDigits = parts[1]
+                        val nameStr = if (parts.size >= 3) parts[2].lowercase().trim() else ""
+                        if (slot != null && slot in 1..9) {
+                            if (numDigits.isNotBlank()) {
+                                savedSpeedDialByDigits[numDigits] = slot
+                            }
+                            if (nameStr.isNotBlank()) {
+                                savedSpeedDialByName[nameStr] = slot
+                            }
+                        }
+                    }
+                }
+
                 // Merge starred device contacts without duplicating the contact
                 for (deviceContact in starredOnDevice) {
                     val nameKey = normName(deviceContact.name)
                     val devDigits = normDigits(deviceContact.phoneNumber)
                     val savedOrder = savedSortMap[devDigits] ?: savedSortMap[nameKey]
+                    val savedSlot = savedSpeedDialByDigits[devDigits] ?: savedSpeedDialByName[nameKey]
 
                     val existing = activeByName[nameKey] ?: activeByName.values.firstOrNull {
                         val d1 = normDigits(it.phoneNumber)
@@ -552,16 +574,19 @@ class MainViewModel(
                     }
 
                     if (existing != null) {
-                        // Keep user's chosen favorite phoneNumber intact; update display name, photo, or restore saved sort order
+                        // Keep user's chosen favorite phoneNumber intact; update display name, photo, or restore saved sort order & speed dial
                         val newSortOrder = savedOrder ?: existing.sortOrder
+                        val newSpeedDialSlot = existing.speedDialSlot ?: savedSlot
                         if (existing.name != deviceContact.name ||
                             existing.photoUri != deviceContact.photoUri ||
-                            existing.sortOrder != newSortOrder) {
+                            existing.sortOrder != newSortOrder ||
+                            existing.speedDialSlot != newSpeedDialSlot) {
                             val updated = existing.copy(
                                 name = deviceContact.name,
                                 nickname = deviceContact.nickname ?: existing.nickname,
                                 photoUri = deviceContact.photoUri ?: existing.photoUri,
-                                sortOrder = newSortOrder
+                                sortOrder = newSortOrder,
+                                speedDialSlot = newSpeedDialSlot
                             )
                             repository.updateFavorite(updated)
                             activeByName[nameKey] = updated
@@ -578,12 +603,32 @@ class MainViewModel(
                             label = deviceContact.label,
                             avatarColor = color,
                             photoUri = deviceContact.photoUri,
-                            sortOrder = targetOrder
+                            sortOrder = targetOrder,
+                            speedDialSlot = savedSlot
                         )
                         val insertedId = repository.insertFavorite(newFav)
                         activeByName[nameKey] = newFav.copy(id = insertedId)
                     }
                 }
+
+                // Resiliently restore any saved speed dial slot on remaining active favorites that lacked it
+                val postMergeFavorites = repository.getAllFavoritesList()
+                val assignedSlots = postMergeFavorites.mapNotNull { it.speedDialSlot }.toMutableSet()
+                for (fav in postMergeFavorites) {
+                    if (fav.speedDialSlot == null) {
+                        val favDigits = normDigits(fav.phoneNumber)
+                        val favName = normName(fav.name)
+                        val candidateSlot = savedSpeedDialByDigits[favDigits] ?: savedSpeedDialByName[favName]
+                        if (candidateSlot != null && !assignedSlots.contains(candidateSlot)) {
+                            repository.updateFavorite(fav.copy(speedDialSlot = candidateSlot))
+                            assignedSlots.add(candidateSlot)
+                        }
+                    }
+                }
+
+                // Also persist current state back to SharedPreferences as baseline backup
+                persistFavoriteSortOrders(repository.getAllFavoritesList())
+                persistSpeedDialAssignments(repository.getAllFavoritesList())
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1114,6 +1159,7 @@ class MainViewModel(
                     )
                 )
             }
+            persistFavoriteSortOrders(repository.getAllFavoritesList())
 
             val (isAppOnly, _) = getContactInfoForConfirmation(phoneNumber, name)
             if (!isAppOnly) {
@@ -1222,6 +1268,8 @@ class MainViewModel(
     fun deleteFavorite(contact: FavoriteContact) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteFavorite(contact)
+            persistSpeedDialAssignments(repository.getAllFavoritesList())
+            persistFavoriteSortOrders(repository.getAllFavoritesList())
             try {
                 ContactHelper.setContactStarred(appContext, contact.phoneNumber, false)
             } catch (e: Exception) {
@@ -1337,19 +1385,21 @@ class MainViewModel(
     }
 
     fun assignSpeedDial(contact: com.example.data.FavoriteContact, slot: Int) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             // If contact already has this slot, toggle it off (unassign)
             if (contact.speedDialSlot == slot) {
                 repository.updateFavorite(contact.copy(speedDialSlot = null))
+                persistSpeedDialAssignments(repository.getAllFavoritesList())
                 return@launch
             }
             // Clear this slot from any other favorite contact that has it
-            val currentFavorites = favorites.value
+            val currentFavorites = repository.getAllFavoritesList()
             currentFavorites.filter { it.speedDialSlot == slot && it.id != contact.id }.forEach { other ->
                 repository.updateFavorite(other.copy(speedDialSlot = null))
             }
             // Assign slot to target contact
             repository.updateFavorite(contact.copy(speedDialSlot = slot))
+            persistSpeedDialAssignments(repository.getAllFavoritesList())
         }
     }
 
@@ -1384,6 +1434,8 @@ class MainViewModel(
                     )
                 )
             }
+            persistSpeedDialAssignments(repository.getAllFavoritesList())
+            persistFavoriteSortOrders(repository.getAllFavoritesList())
         }
     }
 
@@ -1393,6 +1445,29 @@ class MainViewModel(
             currentFavorites.filter { it.speedDialSlot == slot }.forEach { fav ->
                 repository.updateFavorite(fav.copy(speedDialSlot = null))
             }
+            persistSpeedDialAssignments(repository.getAllFavoritesList())
+        }
+    }
+
+    private fun persistSpeedDialAssignments(list: List<com.example.data.FavoriteContact>) {
+        try {
+            fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+            val set = list.filter { it.speedDialSlot != null && it.speedDialSlot in 1..9 }
+                .map { "${it.speedDialSlot}:${normDigits(it.phoneNumber)}:${it.name.trim().lowercase()}" }
+                .toSet()
+            prefs.edit().putStringSet("speed_dial_assignments", set).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun persistFavoriteSortOrders(list: List<com.example.data.FavoriteContact>) {
+        try {
+            fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
+            val sortOrderSet = list.map { "${normDigits(it.phoneNumber)}:${it.sortOrder}:${it.name.trim().lowercase()}" }.toSet()
+            prefs.edit().putStringSet("favorite_sort_orders", sortOrderSet).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

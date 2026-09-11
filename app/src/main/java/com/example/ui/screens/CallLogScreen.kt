@@ -663,22 +663,6 @@ private fun CallLogItem(
                             maxLines = 1,
                             softWrap = false
                         )
-
-                        // SIM Slot Badge or WhatsApp Badge
-                        val isWaCall = call.callReason?.contains("WhatsApp", ignoreCase = true) == true
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (isWaCall) Color(0xFF25D366).copy(alpha = 0.2f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                        ) {
-                            Text(
-                                text = if (isWaCall) "WhatsApp" else "SIM ${if (call.simSlot > 0) call.simSlot else 1}",
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isWaCall) Color(0xFF166534) else MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-
                         if (call.durationSeconds > 0) {
                             val mins = call.durationSeconds / 60
                             val secs = call.durationSeconds % 60

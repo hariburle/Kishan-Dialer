@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -413,7 +414,7 @@ fun RulesScreen(
                                                         ) {
                                                             Surface(
                                                                 shape = RoundedCornerShape(12.dp),
-                                                                color = Color(0xFF3B82F6),
+                                                                color = Color(0xFF2563EB),
                                                                 modifier = Modifier.size(40.dp)
                                                             ) {
                                                                 Box(contentAlignment = Alignment.Center) {
@@ -433,19 +434,41 @@ fun RulesScreen(
                                                                 Text("#1", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
                                                             }
                                                         }
-                                                        Surface(
-                                                            shape = RoundedCornerShape(10.dp),
-                                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                                                            modifier = Modifier.fillMaxWidth().height(26.dp)
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(26.dp),
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                         ) {
-                                                            Row(
-                                                                modifier = Modifier.fillMaxSize(),
-                                                                horizontalArrangement = Arrangement.Center,
-                                                                verticalAlignment = Alignment.CenterVertically
+                                                            Surface(
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                                                modifier = Modifier.weight(1f).fillMaxHeight()
                                                             ) {
-                                                                Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
-                                                                Spacer(modifier = Modifier.width(6.dp))
-                                                                Text("Direct Call", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    horizontalArrangement = Arrangement.Center,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(11.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                                                }
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                color = Color(0xFF25D366).copy(alpha = 0.15f),
+                                                                modifier = Modifier.weight(1f).fillMaxHeight()
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    horizontalArrangement = Arrangement.Center,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    com.example.ui.components.WhatsAppIcon(modifier = Modifier.size(12.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("WhatsApp", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534))
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -469,7 +492,7 @@ fun RulesScreen(
                                                         ) {
                                                             Surface(
                                                                 shape = CircleShape,
-                                                                color = Color(0xFF10B981),
+                                                                color = Color(0xFF059669),
                                                                 modifier = Modifier.size(38.dp)
                                                             ) {
                                                                 Box(contentAlignment = Alignment.Center) {
@@ -491,7 +514,7 @@ fun RulesScreen(
                                                         }
                                                         Row(
                                                             modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.End,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Surface(
@@ -500,7 +523,16 @@ fun RulesScreen(
                                                                 modifier = Modifier.size(28.dp)
                                                             ) {
                                                                 Box(contentAlignment = Alignment.Center) {
-                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                                                }
+                                                            }
+                                                            Surface(
+                                                                shape = CircleShape,
+                                                                color = Color(0xFF25D366),
+                                                                modifier = Modifier.size(28.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    com.example.ui.components.WhatsAppIcon(modifier = Modifier.size(14.dp))
                                                                 }
                                                             }
                                                         }
@@ -547,21 +579,35 @@ fun RulesScreen(
                                                         }
                                                         Row(
                                                             modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.End,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Surface(
-                                                                shape = RoundedCornerShape(14.dp),
+                                                                shape = RoundedCornerShape(12.dp),
                                                                 color = MaterialTheme.colorScheme.primary,
                                                                 modifier = Modifier.height(26.dp)
                                                             ) {
                                                                 Row(
-                                                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                                                    modifier = Modifier.padding(horizontal = 8.dp),
                                                                     verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                                                 ) {
-                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
-                                                                    Text("Call", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                                    Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(11.dp))
+                                                                    Text("Phone", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                                }
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                color = Color(0xFF25D366),
+                                                                modifier = Modifier.height(26.dp)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                                ) {
+                                                                    com.example.ui.components.WhatsAppIcon(modifier = Modifier.size(12.dp))
+                                                                    Text("WhatsApp", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                                                 }
                                                             }
                                                         }

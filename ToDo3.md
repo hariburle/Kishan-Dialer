@@ -175,6 +175,21 @@
   - **Analysis**: Cleaned up `RulesScreen.kt` header and placed `+ Create Rule` at bottom-right FAB. Preserved learned choices in storage when mode is "Never" without wiping user data.
   - **Status**: [x] Completed
 
+- [x] **Task 25: Dynamic Star Icon Unstarring Reactive Sync**
+  - **User Item**: ("When i long press a fav card, it opens the contact details and if i click that star the contact gets un-favorited but star status is not changing to hollow star")
+  - **Analysis**: Dynamically evaluate `isFavorite` against active `favorites` StateFlow in `FavoritesScreen.kt` and `ContactDetailsBottomSheet.kt` so the star icon updates to hollow (`Icons.Outlined.StarBorder`) immediately upon unstarring.
+  - **Status**: [x] Completed
+
+- [x] **Task 26: Favorites Header Cleanup**
+  - **User Item**: ("You can even remove the 'Favorites #' header because the panel itself is favorites")
+  - **Analysis**: Removed the redundant `"Favorites (${count})"` section header from `FavoritesScreen.kt` to give maximum layout space directly to VIP cards.
+  - **Status**: [x] Completed
+
+- [x] **Task 27: Settings Card Design Sample Previews Update**
+  - **User Item**: ("The fav card themes in the settings needs to be updated based on what we changed recently with dual dialers")
+  - **Analysis**: Updated Bento, Grid (Quick Action), and Material sample card previews in `RulesScreen.kt` settings tab to showcase side-by-side dual dialers.
+  - **Status**: [x] Completed
+
 ---
 
 ## 📊 Execution & Checkpoint Summary Table
@@ -186,4 +201,4 @@
 | **Phase 3** | Tasks 3, 5, 7, 13 | Zero dummy flash, Fresh install call log sync, Missed call deep-link, Configure mode delete persistence | ✅ Completed |
 | **Phase 4** | Tasks 6, 11 | Bento Ask & Learn dialers, Dedicated Spam window | ✅ Completed |
 | **Phase 5** | Tasks 9, 10 | Horizontal panel/tab swipe navigation, Secondary gestures | ✅ Completed |
-| **Phase 6** | Tasks 14–24 | Recents search, Reorder persistence, Icon sizing, Popular ignore, Keypad hybrid buttons, Nickname lookup | ✅ Completed |
+| **Phase 6** | Tasks 14–27 | Recents search, Reorder persistence, Icon sizing, Popular ignore, Keypad hybrid buttons, Unstarring fix | ✅ Completed |

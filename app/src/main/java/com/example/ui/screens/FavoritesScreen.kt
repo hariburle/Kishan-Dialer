@@ -699,75 +699,7 @@ fun FavoritesScreen(
                             }
                         }
                     } else {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Star,
-                                        contentDescription = null,
-                                        tint = Color(0xFFF59E0B),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = "Favorites",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                    ) {
-                                        Text(
-                                            text = "${favorites.size}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-
-                                // Interactive Card Design Selector
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    FavCardDesign.values().forEach { design ->
-                                        val isSelected = (cardDesign == design)
-                                        Surface(
-                                            onClick = {
-                                                onSetFavoriteCardStyle(design.styleKey)
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                            modifier = Modifier.height(24.dp)
-                                        ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier.padding(horizontal = 8.dp)
-                                            ) {
-                                                Text(
-                                                    text = design.label,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        // Direct Grid Items without header line
 
                         itemsIndexed(localFavorites, key = { _, it -> it.id }) { index, contact ->
                             val preferredMode = getPreferredCallingMode(contact.phoneNumber)
@@ -1183,14 +1115,19 @@ fun FavoritesScreen(
 
     // Android Phone Dialer Contact Details Card Bottom Sheet
     if (contactDetailsTarget != null) {
-        val (matchedContact, favContactInitial) = contactDetailsTarget!!
-        val favContact = favContactInitial?.let { f ->
-            favorites.find { it.id == f.id } ?: f
+        val (matchedContact, _) = contactDetailsTarget!!
+        val cleanMatchedDigits = matchedContact.phoneNumber.filter { it.isDigit() }.takeLast(10)
+        val favContact = favorites.firstOrNull { fav ->
+            val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
+            (cleanMatchedDigits.length >= 7 && favDigits == cleanMatchedDigits) ||
+            fav.name.equals(matchedContact.name.trim(), ignoreCase = true)
         }
+        val isFav = favContact != null
+
         ContactDetailsBottomSheet(
             contact = matchedContact,
             favoriteContact = favContact,
-            isFavorite = favContact != null,
+            isFavorite = isFav,
             onCallNumber = { num ->
                 onCallNumber(num)
             },

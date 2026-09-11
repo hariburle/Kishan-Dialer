@@ -27,6 +27,9 @@ Mark `[x]` on the checkbox for each task once you verify it. Each section below 
 - [x] **Task 22 (Phase 6)** — Dual Dialers Across All Favorite Card Styles (Bento, Grid, Material)
 - [x] **Task 23 (Phase 6)** — Keypad Hybrid Action Buttons (`[ 📞 Phone Call ]` & `[ 💬 WhatsApp ]`)
 - [x] **Task 24 (Phase 6)** — Rules FAB Cleanup & "Never" Mode Choice Preservation
+- [x] **Task 25 (Phase 6)** — Dynamic Star Icon Unstarring Reactive Sync
+- [x] **Task 26 (Phase 6)** — Favorites Header Cleanup (Removed redundant header line)
+- [x] **Task 27 (Phase 6)** — Settings Card Design Sample Previews Update (Dual Dialers)
 
 ---
 

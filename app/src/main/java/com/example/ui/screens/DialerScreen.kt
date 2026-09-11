@@ -523,7 +523,7 @@ fun DialerScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 4.dp),
+                .padding(top = 10.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Dialed Number Display Area with Contact Picker / Overflow Menu & Backspace (Fixed 56.dp)

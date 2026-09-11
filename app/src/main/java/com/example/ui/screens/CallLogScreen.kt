@@ -383,7 +383,7 @@ fun CallLogScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().testTag("call_log_list"),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     itemsIndexed(filteredGroupedCalls, key = { index, group -> "${group.primaryCall.id}_${group.primaryCall.timestamp}_$index" }) { _, group ->
                 val callDigits = group.primaryCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
@@ -500,17 +500,17 @@ private fun CallLogItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 // Avatar with contact photo or call type indicator or Spam warning
-                Box(modifier = Modifier.size(44.dp)) {
+                Box(modifier = Modifier.size(36.dp)) {
                     Surface(
                         shape = CircleShape,
                         color = if (group.isSpam) Color(0xFFDC2626).copy(alpha = 0.15f) else typeColor.copy(alpha = 0.15f),

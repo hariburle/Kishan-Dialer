@@ -204,6 +204,8 @@ fun ContactsScreen(
     }
 
     var smartSortBy by remember { mutableStateOf(SmartContactSort.A_Z) }
+    var rediscoverShuffleSeed by remember { mutableLongStateOf(0L) }
+    var longTimeShuffleSeed by remember { mutableLongStateOf(0L) }
 
     // Map phone numbers to recent call stats for smart sorting & discovery
     val contactCallStats = remember(recentCalls, effectiveContacts) {
@@ -226,7 +228,7 @@ fun ContactsScreen(
     // Dynamic contact surfacing:
     // In A-Z Directory mode: alphabetical sort by First or Last name, Ascending or Descending.
     // In Smart Discovery: contacts are surfaced strictly according to discovery parameters and NOT sorted alphabetically.
-    val sortedContacts = remember(filteredContacts, smartSortBy, sortBy, sortOrder, contactCallStats) {
+    val sortedContacts = remember(filteredContacts, smartSortBy, sortBy, sortOrder, contactCallStats, rediscoverShuffleSeed, longTimeShuffleSeed) {
         val (lastTsMap, countMap) = contactCallStats
 
         when (smartSortBy) {
@@ -263,21 +265,33 @@ fun ContactsScreen(
                     .map { it.first }
             }
             SmartContactSort.LONG_TIME -> {
-                // Smart Discovery: Order strictly by longest inactive contact (oldest last call timestamp ascending).
-                // Do NOT sort alphabetically.
-                filteredContacts
+                // Smart Discovery: Inactive contacts with prior interaction history.
+                // If reshuffled, randomized to surface fresh reconnect suggestions; otherwise ordered oldest last call ascending.
+                val inactiveList = filteredContacts
                     .map { c -> c to getContactStats(c, lastTsMap, countMap) }
                     .filter { it.second.first > 0L }
                     .sortedBy { it.second.first }
                     .map { it.first }
+
+                if (longTimeShuffleSeed == 0L) {
+                    inactiveList
+                } else {
+                    inactiveList.shuffled(java.util.Random(longTimeShuffleSeed))
+                }
             }
             SmartContactSort.REDISCOVER -> {
-                // Smart Discovery: Order strictly dormant or uncontacted connections.
-                // Do NOT sort alphabetically.
-                filteredContacts
+                // Smart Discovery: Order strictly dormant or uncontacted connections, randomized/shuffled for discovery.
+                val dormantList = filteredContacts
                     .map { c -> c to getContactStats(c, lastTsMap, countMap) }
                     .filter { it.second.second == 0 }
                     .map { it.first }
+
+                if (rediscoverShuffleSeed == 0L) {
+                    // Default deterministic shuffle using hash so it's randomized across contacts rather than alphabetical
+                    dormantList.shuffled(java.util.Random(42L))
+                } else {
+                    dormantList.shuffled(java.util.Random(rediscoverShuffleSeed))
+                }
             }
         }
     }
@@ -391,7 +405,15 @@ fun ContactsScreen(
                 val isSelected = (smartSortBy == sortMode)
                 FilterChip(
                     selected = isSelected,
-                    onClick = { smartSortBy = sortMode },
+                    onClick = {
+                        if (sortMode == SmartContactSort.REDISCOVER && isSelected) {
+                            rediscoverShuffleSeed = System.currentTimeMillis()
+                        } else if (sortMode == SmartContactSort.LONG_TIME && isSelected) {
+                            longTimeShuffleSeed = System.currentTimeMillis()
+                        } else {
+                            smartSortBy = sortMode
+                        }
+                    },
                     label = {
                         Text(
                             text = "${sortMode.emoji} ${sortMode.label}",
@@ -565,7 +587,7 @@ fun ContactsScreen(
                 }
             }
         } else {
-            // In Smart Discovery mode: do NOT sort alphabetically; show active discovery order parameter
+            // In Smart Discovery mode: do NOT sort alphabetically; show active discovery order parameter & reshuffle if Rediscover
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -580,35 +602,75 @@ fun ContactsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val (paramIcon, paramLabel) = when (smartSortBy) {
-                            SmartContactSort.RECENT -> Icons.Default.Schedule to "Order: Call Recency"
-                            SmartContactSort.FREQUENT -> Icons.Default.LocalFireDepartment to "Order: Call Frequency"
-                            SmartContactSort.LONG_TIME -> Icons.Default.History to "Order: Longest Inactive"
-                            SmartContactSort.REDISCOVER -> Icons.Default.Explore to "Order: Uncontacted / Dormant"
-                            else -> Icons.Default.FilterList to "Order: Discovery Parameters"
+                    val isShuffleableMode = (smartSortBy == SmartContactSort.REDISCOVER || smartSortBy == SmartContactSort.LONG_TIME)
+                    if (isShuffleableMode && sortedContacts.isNotEmpty()) {
+                        Surface(
+                            onClick = {
+                                if (smartSortBy == SmartContactSort.LONG_TIME) {
+                                    longTimeShuffleSeed = System.currentTimeMillis()
+                                } else {
+                                    rediscoverShuffleSeed = System.currentTimeMillis()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Casino,
+                                    contentDescription = "Reshuffle",
+                                    modifier = Modifier.size(13.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "Reshuffle",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
-                        Icon(
-                            imageVector = paramIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(13.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = paramLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val (paramIcon, paramLabel) = when (smartSortBy) {
+                                SmartContactSort.RECENT -> Icons.Default.Schedule to "Order: Call Recency"
+                                SmartContactSort.FREQUENT -> Icons.Default.LocalFireDepartment to "Order: Call Frequency"
+                                SmartContactSort.LONG_TIME -> Icons.Default.History to if (longTimeShuffleSeed != 0L) "Order: Inactive (Shuffled)" else "Order: Longest Inactive"
+                                SmartContactSort.REDISCOVER -> Icons.Default.Explore to "Order: Random Discovery"
+                                else -> Icons.Default.FilterList to "Order: Discovery Parameters"
+                            }
+                            Icon(
+                                imageVector = paramIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = paramLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -670,13 +732,14 @@ fun ContactsScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(end = 28.dp)
-                        .testTag("contacts_list")
-                ) {
+                    val showAlphabetStrip = searchQuery.isBlank() && groupedContacts.isNotEmpty() && smartSortBy == SmartContactSort.A_Z
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(end = if (showAlphabetStrip) 28.dp else 0.dp)
+                            .testTag("contacts_list")
+                    ) {
                     // Collapsible Pinned Favorites on Top of Contacts Panel
                     if (favorites.isNotEmpty() && searchQuery.isBlank()) {
                         item(key = "top_favorites_section") {
@@ -1174,7 +1237,8 @@ private fun ContactRowItem(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         if (contact.isAppOnly) {
                             Surface(
@@ -1200,6 +1264,8 @@ private fun ContactRowItem(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }

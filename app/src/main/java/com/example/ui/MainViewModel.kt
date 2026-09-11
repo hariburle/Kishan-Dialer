@@ -165,8 +165,8 @@ class MainViewModel(
         prefs.edit().putInt("default_start_tab", tabIndex).apply()
     }
 
-    // Incoming Call Answering Style ("horizontal_slide", "swipe_up", "button_tap")
-    private val _callAnswerStyle = MutableStateFlow(prefs.getString("call_answer_style", "horizontal_slide") ?: "horizontal_slide")
+    // Incoming Call Answering Style ("swipe_slider", "swipe_up", "button_tap")
+    private val _callAnswerStyle = MutableStateFlow(prefs.getString("call_answer_style", "swipe_slider") ?: "swipe_slider")
     val callAnswerStyle: StateFlow<String> = _callAnswerStyle.asStateFlow()
 
     fun setCallAnswerStyle(style: String) {
@@ -1670,6 +1670,34 @@ class MainViewModel(
                 repository.updateFavorite(fav.copy(name = newName, phoneNumber = newNumber, label = newLabel))
             }
             refreshContacts()
+        }
+    }
+
+    fun exportBackup(uri: android.net.Uri, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val success = com.example.util.BackupManager.writeBackupToUri(appContext, uri)
+            onComplete(success)
+        }
+    }
+
+    fun importBackup(uri: android.net.Uri, onComplete: (com.example.util.BackupRestoreResult) -> Unit) {
+        viewModelScope.launch {
+            val result = com.example.util.BackupManager.restoreBackupFromUri(appContext, uri)
+            if (result.success) {
+                // Refresh local UI states from restored preferences
+                _themeMode.value = prefs.getString("theme_mode", "system") ?: "system"
+                _whatsAppCallMode.value = prefs.getString("whatsapp_call_mode", "ask_learn") ?: "ask_learn"
+                _callAnswerStyle.value = prefs.getString("call_answer_style", "swipe_slider") ?: "swipe_slider"
+                _favoriteCardStyle.value = prefs.getString("favorite_card_style", "bento") ?: "bento"
+                _confirmFavoritesCall.value = prefs.getBoolean("confirm_fav_calls", true)
+                _defaultStartTab.value = prefs.getInt("default_start_tab", 0)
+                _swipeToSwitchPanels.value = prefs.getBoolean("swipe_to_switch_panels", true)
+                _notSpamWhitelist.value = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
+                _learnedCallModes.value = loadLearnedCallModes()
+                refreshContacts()
+                refreshRecentCalls()
+            }
+            onComplete(result)
         }
     }
 

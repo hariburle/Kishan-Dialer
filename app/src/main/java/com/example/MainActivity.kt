@@ -743,7 +743,9 @@ fun MainAppContent(
                         onConsumeAddRuleNumber = { ruleNumberToCreate = null },
                         deviceContacts = deviceContacts,
                         swipeToSwitchPanels = swipeToSwitchPanels,
-                        onSetSwipeToSwitchPanels = { viewModel.setSwipeToSwitchPanels(it) }
+                        onSetSwipeToSwitchPanels = { viewModel.setSwipeToSwitchPanels(it) },
+                        onExportBackup = { uri, onDone -> viewModel.exportBackup(uri, onDone) },
+                        onImportBackup = { uri, onDone -> viewModel.importBackup(uri, onDone) }
                     )
                 }
             }

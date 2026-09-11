@@ -94,6 +94,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import com.example.util.BackupRestoreResult
+import com.example.util.BackupManager
+
 @Composable
 fun RulesScreen(
     rules: List<CallerRule>,
@@ -116,7 +124,7 @@ fun RulesScreen(
     onSetDefaultStartTab: (Int) -> Unit = {},
     swipeToSwitchPanels: Boolean = true,
     onSetSwipeToSwitchPanels: (Boolean) -> Unit = {},
-    callAnswerStyle: String = "swipe_up",
+    callAnswerStyle: String = "swipe_slider",
     onSetCallAnswerStyle: (String) -> Unit = {},
     onToggleRule: (CallerRule) -> Unit,
     onSaveRule: (CallerRule) -> Unit,
@@ -125,6 +133,8 @@ fun RulesScreen(
     initiallyShowAddRuleWithNumber: String? = null,
     onConsumeAddRuleNumber: () -> Unit = {},
     deviceContacts: List<DeviceContact> = emptyList(),
+    onExportBackup: ((android.net.Uri, (Boolean) -> Unit) -> Unit)? = null,
+    onImportBackup: ((android.net.Uri, (BackupRestoreResult) -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -133,6 +143,58 @@ fun RulesScreen(
     var showHistoryDialog by rememberSaveable { mutableStateOf(false) }
     var showSpamDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<CallerRule?>(null) }
+    var backupStatusMessage by remember { mutableStateOf<String?>(null) }
+    var isBackupLoading by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            isBackupLoading = true
+            if (onExportBackup != null) {
+                onExportBackup(uri) { success ->
+                    isBackupLoading = false
+                    backupStatusMessage = if (success) {
+                        "Backup exported successfully to JSON file."
+                    } else {
+                        "Failed to export backup file."
+                    }
+                }
+            } else {
+                coroutineScope.launch {
+                    val success = BackupManager.writeBackupToUri(context, uri)
+                    isBackupLoading = false
+                    backupStatusMessage = if (success) {
+                        "Backup exported successfully to JSON file."
+                    } else {
+                        "Failed to export backup file."
+                    }
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            isBackupLoading = true
+            if (onImportBackup != null) {
+                onImportBackup(uri) { result ->
+                    isBackupLoading = false
+                    backupStatusMessage = result.message
+                }
+            } else {
+                coroutineScope.launch {
+                    val result = BackupManager.restoreBackupFromUri(context, uri)
+                    isBackupLoading = false
+                    backupStatusMessage = result.message
+                }
+            }
+        }
+    }
 
     LaunchedEffect(initiallyShowAddRuleWithNumber) {
         if (!initiallyShowAddRuleWithNumber.isNullOrBlank()) {
@@ -154,7 +216,6 @@ fun RulesScreen(
         }
     }
 
-    val coroutineScope = rememberCoroutineScope()
     val subPagerState = rememberPagerState(initialPage = selectedTab.coerceIn(0, 1)) { 2 }
 
     LaunchedEffect(subPagerState.currentPage) {
@@ -799,6 +860,11 @@ fun RulesScreen(
                             )
                             val answerStyles = listOf(
                                 Triple(
+                                    "swipe_slider",
+                                    "Horizontal Slide to Answer (Default)",
+                                    "Slide handle right to answer, or slide left to decline. Smooth, tactile horizontal slider interface."
+                                ),
+                                Triple(
                                     "swipe_up",
                                     "Swipe Up to Answer (Google Phone style)",
                                     "Swipe up to answer, swipe down to decline. Recommended standard to prevent accidental answering in pockets."
@@ -807,11 +873,6 @@ fun RulesScreen(
                                     "button_tap",
                                     "Press to Answer (Single Tap)",
                                     "Direct one-tap buttons for Answer and Decline. Fastest and easiest for one-handed use."
-                                ),
-                                Triple(
-                                    "swipe_slider",
-                                    "Horizontal Slide to Answer (Classic Slider)",
-                                    "Slide handle to the right to answer, or slide left to decline. Classic and tactile slider interface."
                                 )
                             )
                             answerStyles.forEach { (style, label, desc) ->
@@ -930,6 +991,100 @@ fun RulesScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Backup & Data Management",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Backup,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Export / Import Offline Backup",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Save or restore your automation rules, favorite contact order, speed dials, and app settings.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val fileName = BackupManager.generateBackupFileName()
+                                        exportLauncher.launch(fileName)
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("button_export_backup"),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FileDownload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Export JSON", fontSize = 13.sp)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        importLauncher.launch(arrayOf("application/json", "*/*"))
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("button_import_backup"),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FileUpload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Import Backup", fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Footer credit
@@ -948,6 +1103,7 @@ fun RulesScreen(
                 }
             }
         }
+    }
 
         // Bottom Action Row for Add Rule and Execution History in Rules Page (Page 0)
         if (subPagerState.currentPage == 0) {
@@ -1099,6 +1255,36 @@ fun RulesScreen(
             }
         )
     }
-}
+
+    if (backupStatusMessage != null) {
+        AlertDialog(
+            onDismissRequest = { backupStatusMessage = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Backup,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Backup & Restore",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = backupStatusMessage ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(onClick = { backupStatusMessage = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
 }
 

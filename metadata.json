@@ -1,6 +1,6 @@
 {
-  "name": "Remix Kishan Dialer",
-  "description": "Android Default Phone Dialer with caller photos, automated call workflows, keypad, and selective caller rules.",
+  "name": "OmniDial",
+  "description": "Android Default Phone Dialer with unified Phone & WhatsApp calling, automated caller rules, keypad, and selective contact workflows.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

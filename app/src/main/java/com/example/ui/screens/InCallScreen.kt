@@ -152,7 +152,7 @@ fun InCallScreen(
     onMarkSpam: ((String) -> Unit)? = null,
     onDismiss: () -> Unit = {},
     onClosePostCall: () -> Unit = onDismiss,
-    callAnswerStyle: String = "swipe_up",
+    callAnswerStyle: String = "swipe_slider",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -630,8 +630,8 @@ fun InCallScreen(
 
                     // Incoming call Answering UI based on selected callAnswerStyle
                     when (callAnswerStyle) {
-                        "swipe_slider" -> {
-                            SwipeSliderAnswerView(
+                        "swipe_up" -> {
+                            SwipeUpAnswerView(
                                 onAnswer = onAnswer,
                                 onDecline = onDecline
                             )
@@ -642,8 +642,8 @@ fun InCallScreen(
                                 onDecline = onDecline
                             )
                         }
-                        else -> { // Default: "swipe_up" (Google Phone / Modern Android standard)
-                            SwipeUpAnswerView(
+                        else -> { // Default: "swipe_slider" / "horizontal_slide"
+                            SwipeSliderAnswerView(
                                 onAnswer = onAnswer,
                                 onDecline = onDecline
                             )

@@ -13,6 +13,9 @@ interface AppDao {
     @Query("SELECT * FROM caller_rules ORDER BY id DESC")
     fun getAllRules(): Flow<List<CallerRule>>
 
+    @Query("SELECT * FROM caller_rules ORDER BY id DESC")
+    suspend fun getAllRulesList(): List<CallerRule>
+
     @Query("SELECT * FROM caller_rules WHERE isEnabled = 1")
     suspend fun getEnabledRules(): List<CallerRule>
 
@@ -105,6 +108,9 @@ interface AppDao {
 
     @Query("SELECT * FROM ignored_contacts ORDER BY timestamp DESC")
     fun getAllIgnoredContacts(): Flow<List<IgnoredContact>>
+
+    @Query("SELECT * FROM ignored_contacts ORDER BY timestamp DESC")
+    suspend fun getAllIgnoredContactsList(): List<IgnoredContact>
 
     @Query("SELECT * FROM ignored_contacts WHERE phoneNumber = :number LIMIT 1")
     suspend fun getIgnoredContactByNumber(number: String): IgnoredContact?

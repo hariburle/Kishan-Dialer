@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Kishan Dialer"
+rootProject.name = "OmniDial"
 
 include(":app")

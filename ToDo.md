@@ -1,4 +1,4 @@
-# Kishan Dialer — Master Feature Roadmap & ToDo
+# OmniDial — Master Feature Roadmap & ToDo
 
 ## 📐 Structural Architecture Rules & Engineering Guidelines
 1. **Platform Standards**: Follow clean, platform-standard Android architecture (MVVM, Jetpack Compose, Material Design 3, Telecom `InCallService`, Room SQLite). Rely on standard public Android framework APIs without prescribing undocumented internal classes.

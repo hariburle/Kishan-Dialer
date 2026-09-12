@@ -1,7 +1,7 @@
-# SmartDialer – Release & Versioning Management
+# OmniDial – Release & Versioning Management
 
 ## 1. Versioning Scheme
-SmartDialer uses **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
+OmniDial uses **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 - `versionCode` (Integer in `app/build.gradle.kts`): Increments monotonically with each build (e.g., `1`, `2`, `3`).
 - `versionName` (String in `app/build.gradle.kts`): Semantic representation (e.g., `1.0.0`).
 
@@ -26,8 +26,8 @@ SmartDialer uses **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
    ```bash
    gradle :app:assembleRelease
    ```
-3. Copy the output APK to `docs/SmartDialer.apk` and `SmartDialer.apk`:
+3. Copy the output APK to root `OmniDial.apk`:
    ```bash
-   cp app/build/outputs/apk/release/app-release-unsigned.apk docs/SmartDialer.apk
+   cp app/build/outputs/apk/release/app-release-unsigned.apk OmniDial.apk
    ```
 4. Update the changelog on `docs/index.html` and push to GitHub.

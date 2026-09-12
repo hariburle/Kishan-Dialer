@@ -1,8 +1,8 @@
-# Kishan Dialer — System Architecture & Technical Documentation
+# OmniDial — System Architecture & Technical Documentation
 
 ## 1. Executive Summary
 
-**Kishan Dialer** is a native Android Telecom dialer and call management application built with Jetpack Compose, Kotlin Coroutines/StateFlow, Room SQLite database, and Android Telecom framework (`InCallService`).
+**OmniDial** is a native Android Telecom dialer and call management application built with Jetpack Compose, Kotlin Coroutines/StateFlow, Room SQLite database, and Android Telecom framework (`InCallService`).
 
 The app unifies phone contacts, app-created local contacts, T9 smart dialing, automated call screening/rules, carrier STIR/SHAKEN spam detection, and persistent drag-and-drop VIP favorite shortcuts into a clean Material 3 design.
 

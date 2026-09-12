@@ -969,7 +969,7 @@ fun MainAppContent(
             )
         }
 
-        // Check if Kishan Dialer is the default app on startup, and prompt user if not
+        // Check if OmniDial is the default app on startup, and prompt user if not
         if (!isDefaultDialer && showDefaultAppPrompt) {
             AlertDialog(
                 onDismissRequest = {
@@ -992,7 +992,7 @@ fun MainAppContent(
                 },
                 text = {
                     Text(
-                        text = "Kishan Dialer is not your default phone app. To answer calls, screen spam, and use speed dials seamlessly, please set Kishan Dialer as your default app.",
+                        text = "OmniDial is not your default phone app. To answer calls, screen spam, and use speed dials seamlessly, please set OmniDial as your default app.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

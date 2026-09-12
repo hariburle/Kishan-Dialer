@@ -1,10 +1,11 @@
-# 📞 Kishan Dialer — Smart Android Phone & Call Manager
+# 📞 OmniDial — Smart Android Phone & Call Manager
 
 [![Android](https://img.shields.io/badge/Android-11%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-blue.svg)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Material_3-purple.svg)](https://developer.android.com/jetpack/compose)
+[![Architecture & Design](https://img.shields.io/badge/Architecture-Design_Doc-teal.svg)](DESIGN.md)
 
-**Kishan Dialer** is an intelligent, feature-rich native Android Telecom phone dialer designed for modern Android devices. Built with **Jetpack Compose (Material 3)**, **Kotlin Coroutines/StateFlow**, and Android's native **Telecom `InCallService`**, it combines T9 smart search, horizontal panel swipe navigation, automated call screening/gate buzzer rules, persistent drag-and-drop VIP favorite grid reordering, SIM slot badges, dedicated spam protection, and dual-SIM management into a fast, private, dark-mode-first experience.
+**OmniDial** is an intelligent, feature-rich native Android Telecom phone dialer designed for modern Android devices. Built with **Jetpack Compose (Material 3)**, **Kotlin Coroutines/StateFlow**, and Android's native **Telecom `InCallService`**, it combines T9 smart search, horizontal panel swipe navigation, automated call screening/gate buzzer rules, persistent drag-and-drop VIP favorite grid reordering, SIM slot badges, dedicated spam protection, and dual-SIM management into a fast, private, dark-mode-first experience.
 
 ---
 
@@ -95,7 +96,7 @@ The latest pre-built signed debug executable is available directly in the projec
 
 ## 🔒 Permissions & Security
 
-Kishan Dialer requires standard telephony permissions to operate as your default phone handler:
+OmniDial requires standard telephony permissions to operate as your default phone handler:
 - `READ_CONTACTS` & `WRITE_CONTACTS`: Sync contacts, nicknames, and starred favorites.
 - `CALL_PHONE` & `MANAGE_OWN_CALLS`: Initiate and manage phone calls via Android Telecom.
 - `READ_CALL_LOG` & `WRITE_CALL_LOG`: Display and manage recent call history.

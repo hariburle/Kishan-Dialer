@@ -1,4 +1,4 @@
-# Kishan Dialer — Interactive Testing Checklist (`ToTest.md`)
+# OmniDial — Interactive Testing Checklist (`ToTest.md`)
 
 Mark `[x]` on the checkbox for each task once you verify it. Each section below includes the exact test steps and expected results.
 

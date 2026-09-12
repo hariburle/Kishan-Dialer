@@ -46,15 +46,15 @@
 
     /* Mockup Showcase Carousel / Grid */
     .showcase-section { margin: 60px 0; }
-    .mockup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; justify-items: center; }
+    .mockup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; justify-items: center; max-width: 1240px; margin: 0 auto; }
     
     /* Realistic Android Device Frame */
     .phone-frame {
-      width: 290px;
-      height: 590px;
+      width: 270px;
+      height: 570px;
       background: #000;
-      border: 10px solid #1e293b;
-      border-radius: 44px;
+      border: 9px solid #1e293b;
+      border-radius: 42px;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 40px rgba(37, 99, 235, 0.18);
       position: relative;
       overflow: hidden;
@@ -68,11 +68,11 @@
     }
     .phone-notch {
       position: absolute;
-      top: 10px;
+      top: 8px;
       left: 50%;
       transform: translateX(-50%);
-      width: 80px;
-      height: 18px;
+      width: 76px;
+      height: 16px;
       background: #000;
       border-radius: 20px;
       z-index: 30;
@@ -85,14 +85,14 @@
     }
     .phone-title {
       text-align: center;
-      margin-top: 16px;
+      margin-top: 14px;
       font-weight: 700;
-      font-size: 1.05rem;
+      font-size: 1rem;
       color: var(--text);
     }
     .phone-subtitle {
       text-align: center;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
       margin-top: 3px;
     }
@@ -211,34 +211,44 @@
       </div>
 
       <div class="mockup-grid">
-        <!-- Mockup 1: Smart T9 Keypad -->
+        <!-- Panel 1: Favorites -->
         <div>
           <div class="phone-frame">
             <div class="phone-notch"></div>
-            <img src="screenshot_dialer.png" alt="OmniDial Dialer Screen" class="phone-img">
+            <img src="panel_1_favorites.png" alt="Panel 1 - Favorites & Speed Dial" class="phone-img">
           </div>
-          <div class="phone-title">Dual-Action Dialer</div>
-          <div class="phone-subtitle">Predictive T9 + Instant WhatsApp Button</div>
+          <div class="phone-title">1. Favorites & Speed Dial</div>
+          <div class="phone-subtitle">Bento grid, quick call & WhatsApp launch</div>
         </div>
 
-        <!-- Mockup 2: Incoming Call Screen -->
+        <!-- Panel 2: Recents -->
         <div>
           <div class="phone-frame">
             <div class="phone-notch"></div>
-            <img src="screenshot_incall.png" alt="OmniDial Incoming Call Screen" class="phone-img">
+            <img src="panel_2_recents.png" alt="Panel 2 - Recent Calls Log" class="phone-img">
           </div>
-          <div class="phone-title">In-Call Experience</div>
-          <div class="phone-subtitle">Interactive Swipe Slider & Quick Actions</div>
+          <div class="phone-title">2. Recent Call Logs</div>
+          <div class="phone-subtitle">History, spam badges & instant callbacks</div>
         </div>
 
-        <!-- Mockup 3: Caller Automation & Rules -->
+        <!-- Panel 3: Keypad -->
         <div>
           <div class="phone-frame">
             <div class="phone-notch"></div>
-            <img src="screenshot_rules.png" alt="OmniDial Rules & Backup Screen" class="phone-img">
+            <img src="panel_3_keypad.png" alt="Panel 3 - T9 Keypad" class="phone-img">
           </div>
-          <div class="phone-title">Caller Automation & Backup</div>
-          <div class="phone-subtitle">Auto-Answer, DTMF & JSON Data Export</div>
+          <div class="phone-title">3. T9 Smart Keypad</div>
+          <div class="phone-subtitle">Predictive search & dual-action dial buttons</div>
+        </div>
+
+        <!-- Panel 4: Contacts -->
+        <div>
+          <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <img src="panel_4_contacts.png" alt="Panel 4 - Contacts" class="phone-img">
+          </div>
+          <div class="phone-title">4. Contacts Directory</div>
+          <div class="phone-subtitle">Sorted contact list, search & quick actions</div>
         </div>
       </div>
     </section>

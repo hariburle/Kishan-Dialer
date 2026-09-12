@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -21,6 +22,18 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+  }
+
+  // Auto-restore debug.keystore from debug.keystore.base64 if missing (e.g. fresh git clone in desktop Android Studio)
+  val debugKeystoreFile = file("../debug.keystore")
+  val debugKeystoreBase64 = file("../debug.keystore.base64")
+  if (!debugKeystoreFile.exists() && debugKeystoreBase64.exists()) {
+    try {
+      val decoded = Base64.getDecoder().decode(debugKeystoreBase64.readText().trim())
+      debugKeystoreFile.writeBytes(decoded)
+    } catch (e: Exception) {
+      logger.warn("Could not restore debug.keystore from base64: ${e.message}")
+    }
   }
 
   signingConfigs {
@@ -48,6 +61,9 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
+      isMinifyEnabled = true
+      isShrinkResources = true
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debug")
     }
   }
@@ -63,6 +79,16 @@ android {
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
+  }
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "DebugProbesKt.bin"
+      excludes += "META-INF/*.version"
+    }
   }
 }
 

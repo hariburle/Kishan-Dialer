@@ -199,11 +199,21 @@ fun ContactRowItem(
                     )
                 }
 
-                // Quick Action Buttons (Phone & WhatsApp directly visible)
+                // Quick Action Buttons (WhatsApp & Phone swapped to align with expanded sequence)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    val primaryNumber = contact.phoneNumber.ifBlank { contact.phoneNumbers.firstOrNull()?.number ?: "" }
+                    if (primaryNumber.isNotBlank()) {
+                        IconButton(
+                            onClick = { onPlaceWhatsAppCall(primaryNumber) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            WhatsAppIcon(modifier = Modifier.size(20.dp))
+                        }
+                    }
+
                     IconButton(
                         onClick = { onRequestCall() },
                         modifier = Modifier.size(36.dp)
@@ -214,16 +224,6 @@ fun ContactRowItem(
                             tint = Color(0xFF16A34A),
                             modifier = Modifier.size(20.dp)
                         )
-                    }
-
-                    val primaryNumber = contact.phoneNumber.ifBlank { contact.phoneNumbers.firstOrNull()?.number ?: "" }
-                    if (primaryNumber.isNotBlank()) {
-                        IconButton(
-                            onClick = { onPlaceWhatsAppCall(primaryNumber) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            WhatsAppIcon(modifier = Modifier.size(20.dp))
-                        }
                     }
 
                     IconButton(

@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.RecentCall
+import com.example.ui.components.CompactSearchBar
 import com.example.ui.components.ContactDetailsBottomSheet
 import com.example.ui.components.WhatsAppIcon
 import com.example.util.ContactPhoneNumber
@@ -370,38 +371,14 @@ fun CallLogScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search by name or number") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear search",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                ),
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholder = "Search by name or number",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 6.dp)
-                    .testTag("recents_search_input")
+                    .padding(bottom = 6.dp),
+                testTag = "recents_search_input"
             )
 
             // Category Filter Chips

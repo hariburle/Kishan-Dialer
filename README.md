@@ -89,7 +89,7 @@
 
 The latest pre-built signed debug executable is available directly in the project root repository:
 
-- **[SmartDialer.apk](SmartDialer.apk)** — Ready to install on any Android 11+ (API 30+) device.
+- **[OmniDial.apk](OmniDial.apk)** — Ready to install on any Android 11+ (API 30+) device.
 
 ---
 

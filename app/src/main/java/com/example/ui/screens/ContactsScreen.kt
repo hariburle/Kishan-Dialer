@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.FavoriteContact
 import com.example.data.RecentCall
+import com.example.ui.components.CompactSearchBar
 import com.example.ui.components.ContactDetailsBottomSheet
 import com.example.ui.components.ContactSaveDestination
 import com.example.ui.components.MultiNumberCallDialog
@@ -328,47 +329,22 @@ fun ContactsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("contacts_search_input"),
-                placeholder = { Text("Search by name or number") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholder = "Search by name or number",
+                modifier = Modifier.weight(1f),
+                testTag = "contacts_search_input"
             )
 
             FilledIconButton(
                 onClick = { showAddCustomDialog = true },
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(42.dp)
                     .testTag("add_contact_button"),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -378,7 +354,7 @@ fun ContactsScreen(
                 Icon(
                     imageVector = Icons.Default.PersonAdd,
                     contentDescription = "New Contact",
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

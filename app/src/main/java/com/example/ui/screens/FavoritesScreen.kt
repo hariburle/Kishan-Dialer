@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.launch
+import com.example.ui.components.CompactSearchBar
 import com.example.ui.components.WhatsAppIcon
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -317,24 +318,24 @@ fun FavoritesScreen(
         ) {
             if (isConfigureMode) {
                 Surface(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(21.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp)
+                        .height(42.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.DragHandle,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                         Column(
                             modifier = Modifier.weight(1f),
@@ -342,14 +343,14 @@ fun FavoritesScreen(
                         ) {
                             Text(
                                 text = "Reorder Favorites",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
                                 text = "Drag grip to rearrange • Arrows for 1-step moves",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
@@ -358,44 +359,19 @@ fun FavoritesScreen(
                     }
                 }
             } else {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("favorites_search_input"),
-                    placeholder = { Text("Search by name or number") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Clear",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
+                CompactSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    placeholder = "Search by name or number",
+                    modifier = Modifier.weight(1f),
+                    testTag = "favorites_search_input"
                 )
             }
 
             if (favorites.isNotEmpty()) {
                 FilledIconButton(
                     onClick = { isConfigureMode = !isConfigureMode },
-                    modifier = Modifier.size(48.dp).testTag("fav_screen_configure_button"),
+                    modifier = Modifier.size(42.dp).testTag("fav_screen_configure_button"),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = if (isConfigureMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (isConfigureMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -403,7 +379,8 @@ fun FavoritesScreen(
                 ) {
                     Icon(
                         imageVector = if (isConfigureMode) Icons.Default.Check else Icons.Default.Tune,
-                        contentDescription = if (isConfigureMode) "Done" else "Configure"
+                        contentDescription = if (isConfigureMode) "Done" else "Configure",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

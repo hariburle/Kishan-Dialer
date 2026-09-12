@@ -256,6 +256,7 @@ class RealScreenshotTest {
           onDeleteFavorite = {},
           onAddFavorite = { _, _, _, _ -> },
           onAssignSpeedDial = { _, _ -> },
+          getPreferredCallingMode = { "ask_always" },
           deviceContacts = demoContacts
         )
       }
@@ -269,7 +270,7 @@ class RealScreenshotTest {
     composeTestRule.setContent {
       PixelPhoneFrameWrapper(selectedTab = 1) {
         DialerScreen(
-          number = "3662",
+          number = "+15552345678",
           favorites = demoFavorites,
           recentCalls = demoRecentCalls,
           deviceContacts = demoContacts,
@@ -303,29 +304,11 @@ class RealScreenshotTest {
           onCallNumber = {},
           onSelectNumber = {},
           onToggleFavorite = { _, _, _, _ -> },
-          onCreateRule = {}
+          onCreateRule = {},
+          onPlaceWhatsAppCall = {}
         )
       }
     }
     composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_3_contacts.png")
-  }
-
-  @Test
-  fun capture_panel_4_rules() {
-    composeTestRule.setContent {
-      PixelPhoneFrameWrapper(selectedTab = 3) {
-        RulesScreen(
-          rules = demoRules,
-          automationLogs = emptyList(),
-          favorites = demoFavorites,
-          onToggleRule = {},
-          onSaveRule = {},
-          onDeleteRule = {},
-          onClearLogs = {},
-          deviceContacts = demoContacts
-        )
-      }
-    }
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_4_rules.png")
   }
 }

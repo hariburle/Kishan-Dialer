@@ -48,14 +48,15 @@
     .showcase-section { margin: 60px 0; }
     .mockup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; justify-items: center; max-width: 1240px; margin: 0 auto; }
     
-    /* Realistic Android Device Frame */
+    /* Realistic Google Pixel Device Frame */
     .phone-frame {
       width: 270px;
-      height: 570px;
+      height: 585px;
       background: #000;
-      border: 9px solid #1e293b;
-      border-radius: 42px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 40px rgba(37, 99, 235, 0.18);
+      border: 6px solid #2d3748;
+      outline: 2px solid rgba(255, 255, 255, 0.08);
+      border-radius: 40px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(0, 0, 0, 0.9), 0 0 35px rgba(37, 99, 235, 0.2);
       position: relative;
       overflow: hidden;
       display: flex;
@@ -64,23 +65,38 @@
     }
     .phone-frame:hover {
       transform: translateY(-8px) scale(1.02);
-      box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.9), 0 0 45px rgba(37, 99, 235, 0.35);
+      box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.95), 0 0 45px rgba(37, 99, 235, 0.35);
     }
-    .phone-notch {
+    /* Google Pixel Centered Front Camera Punch-Hole */
+    .pixel-camera {
       position: absolute;
-      top: 8px;
+      top: 13px;
       left: 50%;
       transform: translateX(-50%);
-      width: 76px;
-      height: 16px;
-      background: #000;
-      border-radius: 20px;
+      width: 11px;
+      height: 11px;
+      background: #020617;
+      border: 1.5px solid #1e293b;
+      border-radius: 50%;
+      z-index: 30;
+      box-shadow: inset 0 0 2px #3b82f6;
+    }
+    /* Pixel Ear Speaker Grill */
+    .pixel-speaker {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 44px;
+      height: 2px;
+      background: #334155;
+      border-radius: 2px;
       z-index: 30;
     }
     .phone-img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: fill;
       display: block;
     }
     .phone-title {
@@ -214,41 +230,45 @@
         <!-- Panel 1: Favorites -->
         <div>
           <div class="phone-frame">
-            <div class="phone-notch"></div>
-            <img src="panel_1_favorites.png" alt="Panel 1 - Favorites & Speed Dial" class="phone-img">
+            <div class="pixel-speaker"></div>
+            <div class="pixel-camera"></div>
+            <img src="panel_1_favorites.png" alt="Favorites & Speed Dial Screen" class="phone-img">
           </div>
-          <div class="phone-title">1. Favorites & Speed Dial</div>
+          <div class="phone-title">Favorites & Speed Dial</div>
           <div class="phone-subtitle">Bento grid, quick call & WhatsApp launch</div>
         </div>
 
-        <!-- Panel 2: Recents -->
+        <!-- Panel 2: Keypad -->
         <div>
           <div class="phone-frame">
-            <div class="phone-notch"></div>
-            <img src="panel_2_recents.png" alt="Panel 2 - Recent Calls Log" class="phone-img">
+            <div class="pixel-speaker"></div>
+            <div class="pixel-camera"></div>
+            <img src="panel_2_keypad.png" alt="T9 Keypad Screen" class="phone-img">
           </div>
-          <div class="phone-title">2. Recent Call Logs</div>
-          <div class="phone-subtitle">History, spam badges & instant callbacks</div>
-        </div>
-
-        <!-- Panel 3: Keypad -->
-        <div>
-          <div class="phone-frame">
-            <div class="phone-notch"></div>
-            <img src="panel_3_keypad.png" alt="Panel 3 - T9 Keypad" class="phone-img">
-          </div>
-          <div class="phone-title">3. T9 Smart Keypad</div>
+          <div class="phone-title">T9 Predictive Keypad</div>
           <div class="phone-subtitle">Predictive search & dual-action dial buttons</div>
         </div>
 
-        <!-- Panel 4: Contacts -->
+        <!-- Panel 3: Contacts -->
         <div>
           <div class="phone-frame">
-            <div class="phone-notch"></div>
-            <img src="panel_4_contacts.png" alt="Panel 4 - Contacts" class="phone-img">
+            <div class="pixel-speaker"></div>
+            <div class="pixel-camera"></div>
+            <img src="panel_3_contacts.png" alt="Contacts Screen" class="phone-img">
           </div>
-          <div class="phone-title">4. Contacts Directory</div>
-          <div class="phone-subtitle">Sorted contact list, search & quick actions</div>
+          <div class="phone-title">Contacts Directory</div>
+          <div class="phone-subtitle">Sorted directory, search & quick actions</div>
+        </div>
+
+        <!-- Panel 4: Rules -->
+        <div>
+          <div class="phone-frame">
+            <div class="pixel-speaker"></div>
+            <div class="pixel-camera"></div>
+            <img src="panel_4_rules.png" alt="Caller Rules & Backup Screen" class="phone-img">
+          </div>
+          <div class="phone-title">Automation & Rules</div>
+          <div class="phone-subtitle">Auto-answer, DTMF injection & JSON backup</div>
         </div>
       </div>
     </section>

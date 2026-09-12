@@ -1,28 +1,43 @@
 package com.example
 
+import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Dialpad
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.SignalCellular4Bar
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.CallerRule
 import com.example.data.FavoriteContact
 import com.example.data.RecentCall
-import com.example.ui.screens.CallLogScreen
 import com.example.ui.screens.ContactsScreen
 import com.example.ui.screens.DialerScreen
 import com.example.ui.screens.FavoritesScreen
@@ -50,7 +65,9 @@ class RealScreenshotTest {
     FavoriteContact(id = 1, name = "Alex Johnson", phoneNumber = "+1 (555) 234-5678", label = "Mobile", speedDialSlot = 2, sortOrder = 0),
     FavoriteContact(id = 2, name = "Sarah Miller", phoneNumber = "+1 (555) 876-5432", label = "Work", speedDialSlot = 3, sortOrder = 1),
     FavoriteContact(id = 3, name = "Office Desk", phoneNumber = "+1 (555) 432-1098", label = "Office", speedDialSlot = 4, sortOrder = 2),
-    FavoriteContact(id = 4, name = "Main Gate Intercom", phoneNumber = "555-0199", label = "Security", speedDialSlot = 9, sortOrder = 3)
+    FavoriteContact(id = 4, name = "Main Gate Intercom", phoneNumber = "555-0199", label = "Security", speedDialSlot = 5, sortOrder = 3),
+    FavoriteContact(id = 5, name = "Emma Watson", phoneNumber = "+1 (555) 789-0123", label = "Personal", speedDialSlot = 6, sortOrder = 4),
+    FavoriteContact(id = 6, name = "Dr. Robert Smith", phoneNumber = "+1 (555) 345-6789", label = "Clinic", speedDialSlot = 7, sortOrder = 5)
   )
 
   private val demoRecentCalls = listOf(
@@ -75,6 +92,13 @@ class RealScreenshotTest {
       phoneNumbers = listOf(ContactPhoneNumber("+1 (555) 345-6789", "Mobile"))
     ),
     DeviceContact(
+      name = "Emma Watson",
+      phoneNumber = "+1 (555) 789-0123",
+      label = "Personal",
+      isStarred = true,
+      phoneNumbers = listOf(ContactPhoneNumber("+1 (555) 789-0123", "Personal"))
+    ),
+    DeviceContact(
       name = "Emily Davis",
       phoneNumber = "+1 (555) 567-8901",
       label = "Home",
@@ -93,6 +117,13 @@ class RealScreenshotTest {
       phoneNumbers = listOf(ContactPhoneNumber("+1 (555) 432-1098", "Office"))
     ),
     DeviceContact(
+      name = "Dr. Robert Smith",
+      phoneNumber = "+1 (555) 345-6789",
+      label = "Clinic",
+      isStarred = true,
+      phoneNumbers = listOf(ContactPhoneNumber("+1 (555) 345-6789", "Clinic"))
+    ),
+    DeviceContact(
       name = "Sarah Miller",
       phoneNumber = "+1 (555) 876-5432",
       label = "Work",
@@ -101,47 +132,111 @@ class RealScreenshotTest {
     )
   )
 
+  private val demoRules = listOf(
+    CallerRule(
+      id = 1,
+      name = "VIP Client Auto-Answer",
+      phoneNumberPattern = "+1 (555) 234*",
+      autoAnswer = true,
+      answerDelaySec = 2,
+      isEnabled = true
+    ),
+    CallerRule(
+      id = 2,
+      name = "Gate Intercom DTMF Unlock",
+      phoneNumberPattern = "555-0199",
+      autoAnswer = true,
+      answerDelaySec = 1,
+      dtmfSequence = "9",
+      autoHangup = true,
+      hangupDelaySec = 2,
+      isEnabled = true
+    ),
+    CallerRule(
+      id = 3,
+      name = "Telemarketer Auto-Hangup",
+      phoneNumberPattern = "1800*",
+      autoAnswer = false,
+      autoHangup = true,
+      isEnabled = true
+    )
+  )
+
   @Composable
-  private fun TestAppScaffold(selectedTab: Int, content: @Composable () -> Unit) {
+  private fun PixelPhoneFrameWrapper(selectedTab: Int, content: @Composable () -> Unit) {
     MyApplicationTheme(darkTheme = true) {
-      Scaffold(
-        bottomBar = {
-          NavigationBar {
-            NavigationBarItem(
-              selected = selectedTab == 0,
-              onClick = {},
-              icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-              label = { Text("Favorites") }
-            )
-            NavigationBarItem(
-              selected = selectedTab == 1,
-              onClick = {},
-              icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
-              label = { Text("Recents") }
-            )
-            NavigationBarItem(
-              selected = selectedTab == 2,
-              onClick = {},
-              icon = { Icon(Icons.Default.Dialpad, contentDescription = "Keypad") },
-              label = { Text("Keypad") }
-            )
-            NavigationBarItem(
-              selected = selectedTab == 3,
-              onClick = {},
-              icon = { Icon(Icons.Default.Contacts, contentDescription = "Contacts") },
-              label = { Text("Contacts") }
-            )
-            NavigationBarItem(
-              selected = selectedTab == 4,
-              onClick = {},
-              icon = { Icon(Icons.Default.SmartToy, contentDescription = "Rules") },
-              label = { Text("Rules") }
-            )
+      Column(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color(0xFF0F172A))
+      ) {
+        // Pixel Status Bar (Safe Area avoiding camera hole)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(38.dp)
+            .padding(horizontal = 24.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "9:41",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+          )
+          Spacer(modifier = Modifier.weight(1f))
+          // Center gap for the camera punch hole
+          Spacer(modifier = Modifier.width(36.dp))
+          Spacer(modifier = Modifier.weight(1f))
+          Row(
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Wifi, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(Icons.Default.SignalCellular4Bar, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(Icons.Default.BatteryFull, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
           }
         }
-      ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-          content()
+
+        // Screen Body with Navigation Bar
+        Scaffold(
+          bottomBar = {
+            NavigationBar {
+              NavigationBarItem(
+                selected = selectedTab == 0,
+                onClick = {},
+                icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
+                label = { Text("Favorites") }
+              )
+              NavigationBarItem(
+                selected = selectedTab == 1,
+                onClick = {},
+                icon = { Icon(Icons.Default.Dialpad, contentDescription = "Keypad") },
+                label = { Text("Keypad") }
+              )
+              NavigationBarItem(
+                selected = selectedTab == 2,
+                onClick = {},
+                icon = { Icon(Icons.Default.Contacts, contentDescription = "Contacts") },
+                label = { Text("Contacts") }
+              )
+              NavigationBarItem(
+                selected = selectedTab == 3,
+                onClick = {},
+                icon = { Icon(Icons.Default.SmartToy, contentDescription = "Rules") },
+                label = { Text("Rules") }
+              )
+            }
+          }
+        ) { innerPadding ->
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(innerPadding)
+          ) {
+            content()
+          }
         }
       }
     }
@@ -150,7 +245,7 @@ class RealScreenshotTest {
   @Test
   fun capture_panel_1_favorites() {
     composeTestRule.setContent {
-      TestAppScaffold(selectedTab = 0) {
+      PixelPhoneFrameWrapper(selectedTab = 0) {
         FavoritesScreen(
           favorites = demoFavorites,
           recentCalls = demoRecentCalls,
@@ -169,27 +264,12 @@ class RealScreenshotTest {
   }
 
   @Test
-  fun capture_panel_2_recents() {
+  fun capture_panel_2_keypad() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
     composeTestRule.setContent {
-      TestAppScaffold(selectedTab = 1) {
-        CallLogScreen(
-          recentCalls = demoRecentCalls,
-          favorites = demoFavorites,
-          onCallBack = {},
-          onCreateRuleForNumber = {}
-        )
-      }
-    }
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_2_recents.png")
-  }
-
-  @Test
-  fun capture_panel_3_keypad() {
-    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-    composeTestRule.setContent {
-      TestAppScaffold(selectedTab = 2) {
+      PixelPhoneFrameWrapper(selectedTab = 1) {
         DialerScreen(
-          number = "2539",
+          number = "3662",
           favorites = demoFavorites,
           recentCalls = demoRecentCalls,
           deviceContacts = demoContacts,
@@ -209,13 +289,13 @@ class RealScreenshotTest {
         )
       }
     }
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_3_keypad.png")
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_2_keypad.png")
   }
 
   @Test
-  fun capture_panel_4_contacts() {
+  fun capture_panel_3_contacts() {
     composeTestRule.setContent {
-      TestAppScaffold(selectedTab = 3) {
+      PixelPhoneFrameWrapper(selectedTab = 2) {
         ContactsScreen(
           favorites = demoFavorites,
           recentCalls = demoRecentCalls,
@@ -227,6 +307,25 @@ class RealScreenshotTest {
         )
       }
     }
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_4_contacts.png")
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_3_contacts.png")
+  }
+
+  @Test
+  fun capture_panel_4_rules() {
+    composeTestRule.setContent {
+      PixelPhoneFrameWrapper(selectedTab = 3) {
+        RulesScreen(
+          rules = demoRules,
+          automationLogs = emptyList(),
+          favorites = demoFavorites,
+          onToggleRule = {},
+          onSaveRule = {},
+          onDeleteRule = {},
+          onClearLogs = {},
+          deviceContacts = demoContacts
+        )
+      }
+    }
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/panel_4_rules.png")
   }
 }

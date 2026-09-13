@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
@@ -33,7 +34,7 @@ object BackupManager {
 
     fun generateBackupFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-        return "omnidial_backup_${formatter.format(Date())}.json"
+        return "omnidial_backup_${formatter.format(Date())}.bak"
     }
 
     suspend fun createBackupJson(context: Context): String = withContext(Dispatchers.IO) {
@@ -166,8 +167,30 @@ object BackupManager {
         }
     }
 
+    fun getUriFileName(context: Context, uri: Uri): String? {
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    return cursor.getString(nameIndex)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return uri.path?.substringAfterLast('/')
+    }
+
     suspend fun restoreBackupFromUri(context: Context, uri: Uri): BackupRestoreResult = withContext(Dispatchers.IO) {
         try {
+            val fileName = getUriFileName(context, uri)
+            if (fileName != null && !fileName.contains("omnidial_backup_") && !fileName.endsWith(".bak") && !fileName.endsWith(".json")) {
+                return@withContext BackupRestoreResult(
+                    success = false,
+                    message = "Selected file is not a valid OmniDial backup."
+                )
+            }
+
             val jsonContent = StringBuilder()
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 BufferedReader(InputStreamReader(inputStream)).use { reader ->
@@ -180,6 +203,18 @@ object BackupManager {
             }
 
             val root = JSONObject(jsonContent.toString())
+            restoreBackupFromJsonRoot(context, root)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            BackupRestoreResult(
+                success = false,
+                message = "Failed to import backup file: ${e.localizedMessage ?: "Invalid format"}"
+            )
+        }
+    }
+
+    suspend fun restoreBackupFromJsonRoot(context: Context, root: JSONObject): BackupRestoreResult = withContext(Dispatchers.IO) {
+        try {
             val db = AppDatabase.getInstance(context)
             val dao = db.appDao()
             val prefs = context.getSharedPreferences("kishan_dialer_prefs", Context.MODE_PRIVATE)
@@ -220,6 +255,7 @@ object BackupManager {
 
             // 2. Restore Favorites
             if (root.has("favorites")) {
+                dao.clearAllFavorites()
                 val favArray = root.getJSONArray("favorites")
                 for (i in 0 until favArray.length()) {
                     val obj = favArray.getJSONObject(i)
@@ -241,6 +277,7 @@ object BackupManager {
 
             // 3. Restore Local Contacts
             if (root.has("localContacts")) {
+                dao.clearAllLocalContacts()
                 val contactArray = root.getJSONArray("localContacts")
                 for (i in 0 until contactArray.length()) {
                     val obj = contactArray.getJSONObject(i)
@@ -258,6 +295,7 @@ object BackupManager {
 
             // 4. Restore Spam Numbers
             if (root.has("spamNumbers")) {
+                dao.clearAllSpamNumbers()
                 val spamArray = root.getJSONArray("spamNumbers")
                 for (i in 0 until spamArray.length()) {
                     val obj = spamArray.getJSONObject(i)
@@ -274,6 +312,7 @@ object BackupManager {
 
             // 5. Restore Caller Rules if present
             if (root.has("rules")) {
+                dao.clearAllRules()
                 val rulesArray = root.getJSONArray("rules")
                 for (i in 0 until rulesArray.length()) {
                     val obj = rulesArray.getJSONObject(i)
@@ -298,6 +337,7 @@ object BackupManager {
             // 6. Restore Ignored Contacts
             var restoredIgnored = 0
             if (root.has("ignoredContacts")) {
+                dao.clearAllIgnoredContacts()
                 val ignoredArray = root.getJSONArray("ignoredContacts")
                 for (i in 0 until ignoredArray.length()) {
                     val obj = ignoredArray.getJSONObject(i)
@@ -326,8 +366,67 @@ object BackupManager {
             e.printStackTrace()
             BackupRestoreResult(
                 success = false,
+                message = "Failed to import backup: ${e.localizedMessage ?: "Invalid format"}"
+            )
+        }
+    }
+
+    fun getLocalBackupsDir(context: Context): File {
+        val dir = File(context.filesDir, "backups")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    suspend fun saveLocalBackup(context: Context): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val json = createBackupJson(context)
+            val dir = getLocalBackupsDir(context)
+            val file = File(dir, generateBackupFileName())
+            file.writeText(json)
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun listLocalBackups(context: Context): List<File> {
+        val dir = getLocalBackupsDir(context)
+        return (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && (it.name.endsWith(".bak") || it.name.endsWith(".json")) }
+            .sortedByDescending { it.lastModified() }
+    }
+
+    suspend fun restoreBackupFromFile(context: Context, file: File): BackupRestoreResult = withContext(Dispatchers.IO) {
+        try {
+            if (!file.exists()) {
+                return@withContext BackupRestoreResult(success = false, message = "File does not exist")
+            }
+            val jsonContent = file.readText()
+            val root = JSONObject(jsonContent)
+            restoreBackupFromJsonRoot(context, root)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            BackupRestoreResult(
+                success = false,
                 message = "Failed to import backup file: ${e.localizedMessage ?: "Invalid format"}"
             )
+        }
+    }
+
+    suspend fun deleteLocalBackup(file: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (file.exists()) {
+                file.delete()
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 }

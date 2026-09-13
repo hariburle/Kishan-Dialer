@@ -28,6 +28,9 @@ interface AppDao {
     @Delete
     suspend fun deleteRule(rule: CallerRule)
 
+    @Query("DELETE FROM caller_rules")
+    suspend fun clearAllRules()
+
     @Query("SELECT * FROM automation_logs ORDER BY timestamp DESC LIMIT 50")
     fun getRecentAutomationLogs(): Flow<List<AutomationLog>>
 
@@ -88,6 +91,9 @@ interface AppDao {
     @Delete
     suspend fun deleteFavorite(contact: FavoriteContact)
 
+    @Query("DELETE FROM favorite_contacts")
+    suspend fun clearAllFavorites()
+
     @Query("SELECT * FROM offline_spam_numbers ORDER BY reportCount DESC")
     fun getAllSpamNumbers(): Flow<List<SpamNumber>>
 
@@ -106,6 +112,9 @@ interface AppDao {
     @Query("DELETE FROM offline_spam_numbers WHERE phoneNumber = :number")
     suspend fun deleteSpamByNumber(number: String)
 
+    @Query("DELETE FROM offline_spam_numbers")
+    suspend fun clearAllSpamNumbers()
+
     @Query("SELECT * FROM ignored_contacts ORDER BY timestamp DESC")
     fun getAllIgnoredContacts(): Flow<List<IgnoredContact>>
 
@@ -123,6 +132,9 @@ interface AppDao {
 
     @Query("DELETE FROM ignored_contacts WHERE phoneNumber = :number")
     suspend fun deleteIgnoredContactByNumber(number: String)
+
+    @Query("DELETE FROM ignored_contacts")
+    suspend fun clearAllIgnoredContacts()
 
     @Query("SELECT * FROM local_contacts ORDER BY name ASC")
     fun getAllLocalContacts(): Flow<List<LocalContact>>

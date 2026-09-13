@@ -12,9 +12,10 @@
 ## 🚀 Key Features & Capabilities
 
 ### 1. 🎹 Smart T9 Dialer & Hybrid Keypad
-- **Distinct Hybrid Action Buttons**: Rebuilt Keypad dial buttons into wide, high-visibility Hybrid Buttons displaying both **Icon + Text**:
-  - **Phone Call**: `[ 📞 Phone Call ]` in Deep Emerald (`#059669`).
-  - **WhatsApp Call**: `[ 💬 WhatsApp ]` in Signature WhatsApp Green (`#25D366`).
+- **Non-Scrolling 2x2 Call Action Grid**: Replaced scrolling carousels with a stable 2x2 grid (`Text Message`, `Phone`, `WhatsApp - Msg`, `WhatsApp - Voice`).
+- **Adaptive Preference Highlighting**: Dynamically highlights preferred communication channels using high-contrast borders and subtle background tints based on learned caller intelligence, avoiding intrusive badge tags.
+- **Enhanced Dark Mode WhatsApp Icon**: Rendered with a high-contrast white outer contour ring around the bubble to guarantee perfect visibility and size harmony in dark AMOLED themes.
+- **Bluetooth & Car Head Unit Call Redirection**: Android `CallRedirectionService` (`OmniCallRedirectionService`) automatically routes outgoing calls triggered from vehicle infotainment systems, smartwatches, or third-party dialers to WhatsApp VoIP when preferred.
 - **T9 Search**: Instant T9 matching on digits that searches contact names, nicknames, and phone numbers as you type.
 - **Pause (`,`) & Wait (`;`) Support**:
   - Long-press `*` key to enter a 2-second Pause (`,`).
@@ -88,9 +89,11 @@
 
 ## 📦 Download & Installation
 
-The latest pre-built signed debug executable is available directly in the project root repository:
+The latest release and prior versions are available directly in the project repository and on the [OmniDial Website](docs/index.html):
 
-- **[OmniDial.apk](OmniDial.apk)** — Ready to install on any Android 11+ (API 30+) device.
+- **[OmniDial-v1.1.0.apk](OmniDial-v1.1.0.apk)** *(Latest Release — Build 2)*: 2x2 Call Action layout, adaptive preference highlighting, dark mode WhatsApp contrast, car call redirection, and favorites UX updates.
+- **[OmniDial-v1.0.0.apk](OmniDial-v1.0.0.apk)** *(Prior Release — Build 1)*: Initial release with Cellular + WhatsApp integration, Caller Rules, T9 search, and Flip-to-Shhh.
+- **[OmniDial.apk](OmniDial.apk)** *(Latest build direct alias)*.
 
 ---
 

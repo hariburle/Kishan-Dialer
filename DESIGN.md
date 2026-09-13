@@ -263,3 +263,24 @@ cp app/build/outputs/apk/debug/app-debug.apk OmniDial.apk
 - **Calls don't open in-call screen**: Verify OmniDial is set as default phone app in Android Settings -> Apps -> Default apps -> Phone app.
 - **WhatsApp icon does nothing**: Check that WhatsApp is installed and that the phone number contains a valid country code.
 - **Missing contacts in Recents**: Ensure `READ_CALL_LOG` and `READ_CONTACTS` permissions are granted.
+
+---
+
+## 9. External Outgoing Call Redirection Architecture
+
+### 9.1 The Hands-Free Profile (HFP) & Car Unit Challenge
+When a user initiates an outgoing phone call from an external system—such as a vehicle infotainment head unit (connected via Bluetooth Hands-Free Profile / HFP), a smartwatch, Bluetooth headset, or voice assistant—the external device issues an `ATD` dial command directly into the Android OS telephony stack. 
+
+Under normal circumstances, this bypasses any third-party app's UI and routes directly to the cellular radio modem.
+
+### 9.2 CallRedirectionService Solution
+To solve this generically without vehicle-specific hacks, OmniDial implements Android's native `android.telecom.CallRedirectionService` via `OmniCallRedirectionService`:
+
+1. **System Registration**: Bound with `android.permission.BIND_CALL_REDIRECTION_SERVICE` and registered with the system `CallRedirectionService` action.
+2. **Role Acquisition**: Managed via Android's `RoleManager.ROLE_CALL_REDIRECTION` (or granted automatically when set as the default dialer).
+3. **Interception Pipeline (`onPlaceCall`)**:
+   - The OS routes every outgoing call intent from external systems to `OmniCallRedirectionService.onPlaceCall(handle, initialPhoneAccount, allowInteractiveResponse)`.
+   - The service resolves the destination number and queries the user's preferred communication channel (from `learned_call_modes` or international routing rules).
+   - If the contact is set to standard cellular: calls `placeCallUnmodified()`.
+   - If the contact is preferred for WhatsApp: calls `cancelCall()` to prevent cellular toll charges / dialing, and dispatches the native WhatsApp VoIP Intent (`vnd.android.cursor.item/vnd.com.whatsapp.voip.call` or direct scheme) with fallback notification support.
+

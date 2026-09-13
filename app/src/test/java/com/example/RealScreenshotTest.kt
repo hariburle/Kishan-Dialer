@@ -254,7 +254,7 @@ class RealScreenshotTest {
           onCallWhatsApp = {},
           onCreateRule = {},
           onDeleteFavorite = {},
-          onAddFavorite = { _, _, _, _ -> },
+          onAddFavorite = { _, _, _, _, _ -> },
           onAssignSpeedDial = { _, _ -> },
           getPreferredCallingMode = { "ask_always" },
           deviceContacts = demoContacts

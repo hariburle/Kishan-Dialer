@@ -192,3 +192,14 @@
 - [x] **Recipe 5: Voicemail Automated Access Sequence**
   - *Trigger*: Carrier voicemail dial
   - *Actions*: Answer -> Delay 1000ms -> In-band DTMF PIN sequence `1234#`
+
+---
+
+## 🚀 Phase 7: Release 1.1.0 Enhancements & Multi-Version Distribution
+- [x] **Keypad 2x2 Call Action Grid**: Replaced scrolling carousels with a stable, ergonomic 2x2 button grid (`Text Message`, `Phone`, `WhatsApp - Msg`, `WhatsApp - Voice`).
+- [x] **Adaptive Channel Highlighting**: High-contrast borders and subtle background tints highlight preferred channels based on learned caller intelligence without badge clutter.
+- [x] **Dark Mode WhatsApp Icon Contrast**: Applied a crisp white outer contour ring around the bubble vector path to prevent AMOLED dark theme blending.
+- [x] **External Call Redirection Service**: Implemented `OmniCallRedirectionService` to intercept calls from vehicle Bluetooth head units, smartwatches, and third-party dialers, automatically routing to WhatsApp VoIP when preferred.
+- [x] **Favorites Per-Number Default Selection**: Enables users to explicitly choose which phone number is designated for instant dialing when starring multi-number contacts.
+- [x] **Bi-directional Nickname Sync**: Seamless synchronization between Android Contacts Provider and local Room database.
+- [x] **Multi-Version APK Hosting & Website Release Notes**: Built and hosted both `OmniDial-v1.1.0.apk` (latest) and `OmniDial-v1.0.0.apk` (prior version) with release notes on GitHub Pages.

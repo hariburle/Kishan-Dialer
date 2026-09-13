@@ -29,4 +29,22 @@ object RoleHelper {
             }
         }
     }
+
+    fun isCallRedirectionRoleHeld(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            roleManager?.isRoleHeld(RoleManager.ROLE_CALL_REDIRECTION) == true
+        } else {
+            false
+        }
+    }
+
+    fun createCallRedirectionRoleIntent(context: Context): Intent? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            roleManager?.createRequestRoleIntent(RoleManager.ROLE_CALL_REDIRECTION)
+        } else {
+            null
+        }
+    }
 }

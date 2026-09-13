@@ -351,6 +351,7 @@ fun MainAppContent(
     val callAnswerStyle by viewModel.callAnswerStyle.collectAsStateWithLifecycle()
     val favoriteCardStyle by viewModel.favoriteCardStyle.collectAsStateWithLifecycle()
     val swipeToSwitchPanels by viewModel.swipeToSwitchPanels.collectAsStateWithLifecycle()
+    val localBackups by viewModel.localBackups.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = selectedTab.coerceIn(0, 4)) { 5 }
@@ -541,6 +542,7 @@ fun MainAppContent(
                         onSetFavoriteCardStyle = { viewModel.setFavoriteCardStyle(it) },
                         getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
                         onSaveLearnedCallMode = { num, mode -> viewModel.saveLearnedCallMode(num, mode) },
+                        learnedCallModes = learnedCallModes,
                         onSelectNumber = { num ->
                             viewModel.setDialerNumber(num)
                             selectedTab = 2
@@ -556,8 +558,8 @@ fun MainAppContent(
                             selectedTab = 4
                         },
                         onDeleteFavorite = { fav -> viewModel.deleteFavorite(fav) },
-                        onAddFavorite = { name, num, label, photoUri ->
-                            viewModel.addFavorite(name, num, label, photoUri)
+                        onAddFavorite = { name, num, label, photoUri, nickname ->
+                            viewModel.addFavorite(name, num, label, photoUri, nickname)
                         },
                         onAddNewContact = { name, number, label, destination, addToFavorites ->
                             val saveToDevice = (destination == ContactSaveDestination.PHONE_CONTACTS)
@@ -644,6 +646,8 @@ fun MainAppContent(
                         onPlaceCall = { num, reason -> viewModel.placeCall(context, num, reason) },
                         onPlaceWhatsAppCall = { num -> viewModel.placeWhatsAppCall(context, num) },
                         onSimulateCall = { num, name -> viewModel.simulateIncomingCall(context, num, name) },
+                        getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
+                        learnedCallModes = learnedCallModes,
                         onCreateRuleForNumber = { num ->
                             ruleNumberToCreate = num
                             selectedTab = 4
@@ -745,7 +749,11 @@ fun MainAppContent(
                         swipeToSwitchPanels = swipeToSwitchPanels,
                         onSetSwipeToSwitchPanels = { viewModel.setSwipeToSwitchPanels(it) },
                         onExportBackup = { uri, onDone -> viewModel.exportBackup(uri, onDone) },
-                        onImportBackup = { uri, onDone -> viewModel.importBackup(uri, onDone) }
+                        onImportBackup = { uri, onDone -> viewModel.importBackup(uri, onDone) },
+                        localBackups = localBackups,
+                        onCreateLocalBackup = { onDone -> viewModel.createLocalBackup(onDone) },
+                        onRestoreLocalBackup = { file, onDone -> viewModel.restoreLocalBackup(file, onDone) },
+                        onDeleteLocalBackup = { file -> viewModel.deleteLocalBackup(file) }
                     )
                 }
             }

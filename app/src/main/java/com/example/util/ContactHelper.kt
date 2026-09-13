@@ -887,21 +887,23 @@ object ContactHelper {
     /**
      * Updates or creates a Nickname record for a contact in ContactsContract.Data
      */
-    fun updateContactNickname(context: Context, phoneNumber: String, newNickname: String): Boolean {
-        var contactId: Long? = null
-        try {
-            val uri = Uri.withAppendedPath(
-                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-                Uri.encode(phoneNumber)
-            )
-            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
-                    if (idIdx != -1) contactId = cursor.getLong(idIdx)
+    fun updateContactNickname(context: Context, phoneNumber: String, newNickname: String, knownContactId: Long? = null): Boolean {
+        var contactId: Long? = knownContactId
+        if (contactId == null) {
+            try {
+                val uri = Uri.withAppendedPath(
+                    ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                    Uri.encode(phoneNumber)
+                )
+                context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
+                        if (idIdx != -1) contactId = cursor.getLong(idIdx)
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         if (contactId != null) {

@@ -116,3 +116,24 @@ Evaluate Automation Rules (CallManager.kt)
    - System phone contacts (`contactId > 0`) open directly in the native Android Phone Contacts editor via `Intent.ACTION_EDIT`, while local app-only contacts open `EditContactDialog`.
 6. **Cloud Auto-Backup & Persistence**:
    - `backup_rules.xml` and `data_extraction_rules.xml` ensure shared preferences, learned calling choices, and Room SQLite databases persist across reinstalls and cloud restorations.
+
+---
+
+## 7. Phase 7 (Release 1.1.0) Architecture & Enhancements
+
+1. **Keypad 2x2 Action Button Architecture**:
+   - Replaced scrolling carousels with a stable 2x2 grid in `DialerScreen.kt`:
+     - Row 1: `Text Message` (SMS) and `Phone` (Cellular)
+     - Row 2: `WhatsApp - Msg` and `WhatsApp - Voice`
+   - **Situational Intelligence Highlighting**: Automatically highlights the preferred channel based on `getPreferredCallingMode(number)` using subtle container borders (`colorScheme.primary` or signature WhatsApp green) without visual clutter from text badges.
+2. **High-Contrast Dark Mode WhatsApp Icon**:
+   - `WhatsAppIcon.kt` uses custom vector drawing with an outer white contour stroke around the bubble path.
+   - Prevents dark theme background blending and eliminates sizing anomalies across the keypad, favorites, and contact rows.
+3. **Android `CallRedirectionService` Integration**:
+   - Implemented `OmniCallRedirectionService` to intercept outgoing calls originating outside the app (such as vehicle Bluetooth head-units, Android Auto, smartwatches, voice assistants, and third-party dialers).
+   - If the target contact prefers WhatsApp VoIP, the call is canceled via `cancelCall()` and seamlessly rerouted to WhatsApp VoIP.
+4. **Favorites Per-Number Designation & Nickname Synchronization**:
+   - Favorites search results provide distinct per-number buttons for contacts with multiple numbers, allowing users to designate the specific primary number for instant dialing.
+   - Bi-directional sync between Android Contacts Provider (`ContactsContract.CommonDataKinds.Nickname`) and Room SQLite local database.
+5. **Release Distribution & Versioned Storage Architecture**:
+   - Maintained semantic versioning with dual hosting: latest release (`OmniDial-v1.1.0.apk` / `OmniDial.apk`) and previous builds (`OmniDial-v1.0.0.apk`) in `/docs` and root directory.

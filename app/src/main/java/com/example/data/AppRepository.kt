@@ -12,6 +12,7 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun getEnabledRules(): List<CallerRule> = appDao.getEnabledRules()
 
     suspend fun insertRule(rule: CallerRule): Long = appDao.insertRule(rule)
+    suspend fun clearAllRules() = appDao.clearAllRules()
 
     suspend fun updateRule(rule: CallerRule) = appDao.updateRule(rule)
 
@@ -44,6 +45,7 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun getAllFavoritesList(): List<FavoriteContact> = appDao.getAllFavoritesList()
 
     suspend fun insertFavorite(contact: FavoriteContact): Long = appDao.insertFavorite(contact)
+    suspend fun clearAllFavorites() = appDao.clearAllFavorites()
 
     suspend fun updateFavorite(contact: FavoriteContact) = appDao.updateFavorite(contact)
 
@@ -55,6 +57,7 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun getAllSpamNumbersList(): List<SpamNumber> = appDao.getAllSpamNumbersList()
 
     suspend fun insertSpamNumber(spam: SpamNumber): Long = appDao.insertSpamNumber(spam)
+    suspend fun clearAllSpamNumbers() = appDao.clearAllSpamNumbers()
 
     suspend fun deleteSpamNumber(spam: SpamNumber) = appDao.deleteSpamNumber(spam)
 
@@ -65,6 +68,7 @@ class AppRepository(private val appDao: AppDao) {
     val ignoredContacts: Flow<List<IgnoredContact>> = appDao.getAllIgnoredContacts()
 
     suspend fun insertIgnoredContact(ignored: IgnoredContact) = appDao.insertIgnoredContact(ignored)
+    suspend fun clearAllIgnoredContacts() = appDao.clearAllIgnoredContacts()
 
     suspend fun deleteIgnoredContact(ignored: IgnoredContact) = appDao.deleteIgnoredContact(ignored)
 

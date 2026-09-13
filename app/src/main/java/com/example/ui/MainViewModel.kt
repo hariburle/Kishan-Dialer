@@ -88,6 +88,13 @@ class MainViewModel(
     private val _learnedCallModes = MutableStateFlow<Map<String, String>>(loadLearnedCallModes())
     val learnedCallModes: StateFlow<Map<String, String>> = _learnedCallModes.asStateFlow()
 
+    private val _localBackups = MutableStateFlow<List<java.io.File>>(emptyList())
+    val localBackups: StateFlow<List<java.io.File>> = _localBackups.asStateFlow()
+
+    fun refreshLocalBackups() {
+        _localBackups.value = com.example.util.BackupManager.listLocalBackups(appContext)
+    }
+
     private fun loadLearnedCallModes(): Map<String, String> {
         val rawSet = prefs.getStringSet("whatsapp_learned_choices", emptySet()) ?: emptySet()
         val map = mutableMapOf<String, String>()
@@ -326,6 +333,7 @@ class MainViewModel(
         refreshContacts()
         refreshRecentCalls()
         refreshSimCards()
+        refreshLocalBackups()
         registerContactsObserver()
         registerCallLogObserver()
         viewModelScope.launch {
@@ -645,16 +653,18 @@ class MainViewModel(
                     }
 
                     if (existing != null) {
-                        // Keep user's chosen favorite phoneNumber intact; update display name, photo, or restore saved sort order & speed dial
+                        // Keep user's chosen favorite phoneNumber intact; update display name, nickname, photo, or restore saved sort order & speed dial
                         val newSortOrder = savedOrder ?: existing.sortOrder
                         val newSpeedDialSlot = existing.speedDialSlot ?: savedSlot
+                        val newNickname = deviceContact.nickname ?: existing.nickname
                         if (existing.name != deviceContact.name ||
+                            existing.nickname != newNickname ||
                             existing.photoUri != deviceContact.photoUri ||
                             existing.sortOrder != newSortOrder ||
                             existing.speedDialSlot != newSpeedDialSlot) {
                             val updated = existing.copy(
                                 name = deviceContact.name,
-                                nickname = deviceContact.nickname ?: existing.nickname,
+                                nickname = newNickname,
                                 photoUri = deviceContact.photoUri ?: existing.photoUri,
                                 sortOrder = newSortOrder,
                                 speedDialSlot = newSpeedDialSlot
@@ -685,13 +695,36 @@ class MainViewModel(
                 // Resiliently restore any saved speed dial slot on remaining active favorites that lacked it
                 val postMergeFavorites = repository.getAllFavoritesList()
                 val assignedSlots = postMergeFavorites.mapNotNull { it.speedDialSlot }.toMutableSet()
+                val allDevContacts = _deviceContacts.value
                 for (fav in postMergeFavorites) {
-                    if (fav.speedDialSlot == null) {
-                        val favDigits = normDigits(fav.phoneNumber)
-                        val favName = normName(fav.name)
+                    val favDigits = normDigits(fav.phoneNumber)
+                    val favName = normName(fav.name)
+
+                    // Also sync nickname, name, or photo from any device contact (even if not starred on device)
+                    val devMatch = allDevContacts.firstOrNull { dc ->
+                        (favDigits.length >= 7 && normDigits(dc.phoneNumber) == favDigits) ||
+                        dc.phoneNumbers.any { favDigits.length >= 7 && normDigits(it.number) == favDigits } ||
+                        normName(dc.name) == favName
+                    }
+                    val devNickname = devMatch?.nickname?.trim()?.ifBlank { null }
+                    val effectiveNick = devNickname ?: fav.nickname
+                    val effectiveName = devMatch?.name ?: fav.name
+                    val effectivePhoto = devMatch?.photoUri ?: fav.photoUri
+
+                    var favToSave = fav
+                    if (fav.nickname != effectiveNick || fav.name != effectiveName || fav.photoUri != effectivePhoto) {
+                        favToSave = favToSave.copy(
+                            nickname = effectiveNick,
+                            name = effectiveName,
+                            photoUri = effectivePhoto
+                        )
+                        repository.updateFavorite(favToSave)
+                    }
+
+                    if (favToSave.speedDialSlot == null) {
                         val candidateSlot = savedSpeedDialByDigits[favDigits] ?: savedSpeedDialByName[favName]
                         if (candidateSlot != null && !assignedSlots.contains(candidateSlot)) {
-                            repository.updateFavorite(fav.copy(speedDialSlot = candidateSlot))
+                            repository.updateFavorite(favToSave.copy(speedDialSlot = candidateSlot))
                             assignedSlots.add(candidateSlot)
                         }
                     }
@@ -1249,14 +1282,14 @@ class MainViewModel(
         }
     }
 
-    fun addFavorite(name: String, phoneNumber: String, label: String = "Mobile", photoUri: String? = null) {
+    fun addFavorite(name: String, phoneNumber: String, label: String = "Mobile", photoUri: String? = null, nickname: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
             val cleanDigits = normDigits(phoneNumber)
             val currentList = repository.getAllFavoritesList()
             val matchedContact = lookupContactByNumber(phoneNumber)
                 ?: deviceContacts.value.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
-            val nicknameToUse = matchedContact?.nickname?.ifBlank { null }
+            val nicknameToUse = nickname?.trim()?.ifBlank { null } ?: matchedContact?.nickname?.ifBlank { null }
 
             val existing = currentList.firstOrNull {
                 (cleanDigits.length >= 7 && normDigits(it.phoneNumber) == cleanDigits) ||
@@ -1290,6 +1323,10 @@ class MainViewModel(
                 )
             }
             persistFavoriteSortOrders(repository.getAllFavoritesList())
+
+            if (!nickname.isNullOrBlank()) {
+                ContactHelper.updateContactNickname(appContext, phoneNumber, nickname.trim(), matchedContact?.contactId)
+            }
 
             val (isAppOnly, _) = getContactInfoForConfirmation(phoneNumber, name)
             if (!isAppOnly) {
@@ -1696,8 +1733,48 @@ class MainViewModel(
                 _learnedCallModes.value = loadLearnedCallModes()
                 refreshContacts()
                 refreshRecentCalls()
+                refreshLocalBackups()
             }
             onComplete(result)
+        }
+    }
+
+    fun createLocalBackup(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val success = com.example.util.BackupManager.saveLocalBackup(appContext)
+            if (success) {
+                refreshLocalBackups()
+            }
+            onComplete(success)
+        }
+    }
+
+    fun restoreLocalBackup(file: java.io.File, onComplete: (com.example.util.BackupRestoreResult) -> Unit) {
+        viewModelScope.launch {
+            val result = com.example.util.BackupManager.restoreBackupFromFile(appContext, file)
+            if (result.success) {
+                // Refresh local UI states from restored preferences
+                _themeMode.value = prefs.getString("theme_mode", "system") ?: "system"
+                _whatsAppCallMode.value = prefs.getString("whatsapp_call_mode", "ask_learn") ?: "ask_learn"
+                _callAnswerStyle.value = prefs.getString("call_answer_style", "swipe_slider") ?: "swipe_slider"
+                _favoriteCardStyle.value = prefs.getString("favorite_card_style", "bento") ?: "bento"
+                _confirmFavoritesCall.value = prefs.getBoolean("confirm_fav_calls", true)
+                _defaultStartTab.value = prefs.getInt("default_start_tab", 0)
+                _swipeToSwitchPanels.value = prefs.getBoolean("swipe_to_switch_panels", true)
+                _notSpamWhitelist.value = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
+                _learnedCallModes.value = loadLearnedCallModes()
+                refreshContacts()
+                refreshRecentCalls()
+                refreshLocalBackups()
+            }
+            onComplete(result)
+        }
+    }
+
+    fun deleteLocalBackup(file: java.io.File) {
+        viewModelScope.launch {
+            com.example.util.BackupManager.deleteLocalBackup(file)
+            refreshLocalBackups()
         }
     }
 

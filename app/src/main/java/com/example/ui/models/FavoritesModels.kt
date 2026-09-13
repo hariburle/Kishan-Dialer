@@ -13,7 +13,6 @@ data class PopularContactItem(
 
 enum class FavCardDesign(val label: String, val styleKey: String) {
     MODERN_BENTO("Bento", "bento"),
-    QUICK_ACTION("Grid", "quick_action"),
     MATERIAL_YOU("Material", "material_you");
 
     companion object {

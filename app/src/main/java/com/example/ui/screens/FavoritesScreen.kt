@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.CircleShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -79,6 +80,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Tune
@@ -154,7 +156,7 @@ fun FavoritesScreen(
     onCallWhatsApp: (String) -> Unit = {},
     onCreateRule: (String) -> Unit,
     onDeleteFavorite: (FavoriteContact) -> Unit,
-    onAddFavorite: (name: String, number: String, label: String, photoUri: String?) -> Unit,
+    onAddFavorite: (name: String, number: String, label: String, photoUri: String?, nickname: String?) -> Unit = { _, _, _, _, _ -> },
     onAddNewContact: (name: String, number: String, label: String, destination: ContactSaveDestination, addToFavorites: Boolean) -> Unit = { _, _, _, _, _ -> },
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit,
     onMoveFavorite: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
@@ -166,6 +168,7 @@ fun FavoritesScreen(
     onUpdateIgnoredContactTag: (phoneNumber: String, newTag: String, newName: String) -> Unit = { _, _, _ -> },
     getPreferredCallingMode: (String) -> String = { "cellular" },
     onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
+    learnedCallModes: Map<String, String> = emptyMap(),
     confirmFavoritesCall: Boolean = true,
     favoriteCardStyle: String = "bento",
     onSetFavoriteCardStyle: (String) -> Unit = {},
@@ -195,13 +198,24 @@ fun FavoritesScreen(
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
+    BackHandler(enabled = searchQuery.isNotBlank() || isConfigureMode) {
+        if (searchQuery.isNotBlank()) {
+            searchQuery = ""
+        }
+        if (isConfigureMode) {
+            isConfigureMode = false
+        }
+    }
+
     LaunchedEffect(favorites) {
         if (draggingContactId == null) {
             localFavorites = favorites
         }
     }
     var isSearchActive by remember { mutableStateOf(false) }
-    var pendingCallConfirmation by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pendingCallConfirmation by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+    var nicknameDialogTarget by remember { mutableStateOf<Pair<DeviceContact, String?>?>(null) }
+    var nicknameDialogText by remember { mutableStateOf("") }
     val effectiveDeviceContacts = deviceContacts
     var multiNumberContactToCall by remember { mutableStateOf<DeviceContact?>(null) }
     var favoriteContactToCall by remember { mutableStateOf<FavoriteContact?>(null) }
@@ -415,10 +429,16 @@ fun FavoritesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredContacts, key = { "${it.contactId}_${it.phoneNumber}_${it.name}" }) { contact ->
-                        val isFav = favorites.any { fav ->
-                            fav.name.equals(contact.name, ignoreCase = true) ||
-                            fav.phoneNumber == contact.phoneNumber
+                        val favContactForThis = favorites.firstOrNull { fav ->
+                            val favDigits = fav.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
+                            contact.phoneNumbers.any { pn ->
+                                val pnDigits = pn.number.filter { c -> c.isDigit() }.takeLast(10)
+                                pnDigits.length >= 7 && pnDigits == favDigits
+                            } || fav.name.equals(contact.name.trim(), ignoreCase = true)
                         }
+                        val isFav = favContactForThis != null
+                        val effectiveNickname = favContactForThis?.nickname?.ifBlank { null } ?: contact.nickname?.ifBlank { null }
+
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(
@@ -440,7 +460,7 @@ fun FavoritesScreen(
                                         Surface(
                                             shape = CircleShape,
                                             color = MaterialTheme.colorScheme.primaryContainer,
-                                            modifier = Modifier.size(34.dp)
+                                            modifier = Modifier.size(36.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text(
@@ -469,23 +489,40 @@ fun FavoritesScreen(
                                                     )
                                                 }
                                             }
-                                            Text(
-                                                text = "${contact.phoneNumbers.size.coerceAtLeast(1)} numbers available",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-
-                                    if (!isFav) {
-                                        TextButton(
-                                            onClick = {
-                                                onAddFavorite(contact.name, contact.phoneNumber, contact.label, contact.photoUri)
+                                            if (!effectiveNickname.isNullOrBlank()) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.clickable {
+                                                        nicknameDialogTarget = Pair(contact, null)
+                                                        nicknameDialogText = effectiveNickname
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "Nickname: \"$effectiveNickname\"",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Icon(
+                                                        imageVector = Icons.Default.Edit,
+                                                        contentDescription = "Edit Nickname",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                Text(
+                                                    text = "+ Add Nickname",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier.clickable {
+                                                        nicknameDialogTarget = Pair(contact, null)
+                                                        nicknameDialogText = ""
+                                                    }
+                                                )
                                             }
-                                        ) {
-                                            Icon(imageVector = Icons.Default.Star, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Add")
                                         }
                                     }
                                 }
@@ -494,7 +531,7 @@ fun FavoritesScreen(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 Spacer(modifier = Modifier.height(6.dp))
 
-                                // List each phone number with WhatsApp and Phone call buttons
+                                // List each phone number with an Add / Set Default button
                                 val numbersToShow = if (contact.phoneNumbers.isNotEmpty()) {
                                     contact.phoneNumbers
                                 } else {
@@ -502,11 +539,15 @@ fun FavoritesScreen(
                                 }
 
                                 numbersToShow.forEach { pn ->
+                                    val pnDigits = pn.number.filter { it.isDigit() }.takeLast(10)
+                                    val favDigits = favContactForThis?.phoneNumber?.filter { it.isDigit() }?.takeLast(10) ?: ""
+                                    val isThisNumberDefault = isFav && (pnDigits.length >= 7 && pnDigits == favDigits)
+
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .padding(vertical = 4.dp, horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
@@ -523,34 +564,50 @@ fun FavoritesScreen(
                                                 fontWeight = FontWeight.SemiBold
                                             )
                                         }
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            FilledIconButton(
-                                                onClick = { onCallWhatsApp(pn.number) },
-                                                modifier = Modifier.size(34.dp),
-                                                colors = IconButtonDefaults.filledIconButtonColors(
-                                                    containerColor = Color(0xFF25D366),
-                                                    contentColor = Color.White
-                                                )
+
+                                        if (isThisNumberDefault) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = Color(0xFFF59E0B),
+                                                contentColor = Color.White
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.Chat,
-                                                    contentDescription = "WhatsApp ${pn.number}",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                                    Text("Default", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                                }
                                             }
-                                            FilledIconButton(
-                                                onClick = { onCallNumber(pn.number) },
-                                                modifier = Modifier.size(34.dp)
+                                        } else if (isFav) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    onUpdateFavoriteNumber(favContactForThis!!, pn.number, pn.label)
+                                                },
+                                                modifier = Modifier.height(32.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp)
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Call,
-                                                    contentDescription = "Call ${pn.number}",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
+                                                Icon(imageVector = Icons.Default.StarBorder, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Set Default", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = {
+                                                    if (effectiveNickname.isNullOrBlank()) {
+                                                        nicknameDialogTarget = Pair(contact, pn.number)
+                                                        nicknameDialogText = ""
+                                                    } else {
+                                                        onAddFavorite(contact.name, pn.number, pn.label, contact.photoUri, effectiveNickname)
+                                                    }
+                                                },
+                                                modifier = Modifier.height(32.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                            ) {
+                                                Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFF59E0B))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Add ★", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -676,7 +733,9 @@ fun FavoritesScreen(
                         // Direct Grid Items without header line
 
                         itemsIndexed(localFavorites, key = { _, it -> it.id }) { index, contact ->
-                            val preferredMode = getPreferredCallingMode(contact.phoneNumber)
+                            val preferredMode = remember(contact.phoneNumber, learnedCallModes) {
+                                getPreferredCallingMode(contact.phoneNumber)
+                            }
                             val isBeingDragged = (draggingContactId == contact.id)
 
                             Box(
@@ -791,12 +850,18 @@ fun FavoritesScreen(
                                     },
                                     onCall = {
                                         if (confirmFavoritesCall) {
-                                            pendingCallConfirmation = Pair(contact.name, contact.phoneNumber)
+                                            pendingCallConfirmation = Triple(contact.name, contact.phoneNumber, false)
                                         } else {
                                             onCallNumber(contact.phoneNumber)
                                         }
                                     },
-                                    onCallWhatsApp = { onCallWhatsApp(contact.phoneNumber) },
+                                    onCallWhatsApp = {
+                                        if (confirmFavoritesCall) {
+                                            pendingCallConfirmation = Triple(contact.name, contact.phoneNumber, true)
+                                        } else {
+                                            onCallWhatsApp(contact.phoneNumber)
+                                        }
+                                    },
                                     onLongClick = {
                                         val normNum = contact.phoneNumber.replace(Regex("[^0-9+]"), "")
                                         val matched = deviceContacts.firstOrNull { dc ->
@@ -880,7 +945,7 @@ fun FavoritesScreen(
                                 isConfigureMode = isConfigureMode,
                                 onCall = { onCallNumber(popItem.phoneNumber) },
                                 onAddFavorite = {
-                                    onAddFavorite(popItem.name, popItem.phoneNumber, popItem.label, popItem.photoUri)
+                                    onAddFavorite(popItem.name, popItem.phoneNumber, popItem.label, popItem.photoUri, null)
                                 },
                                 onIgnore = {
                                     onIgnoreContact(popItem.phoneNumber, popItem.name, popItem.label, popItem.name)
@@ -1010,7 +1075,9 @@ fun FavoritesScreen(
                                 isConfigureMode = isConfigureMode,
                                 isFloatingOverlay = true,
                                 isDraggingActive = true,
-                                preferredCallingMode = getPreferredCallingMode(dragContact.phoneNumber),
+                                preferredCallingMode = remember(dragContact.phoneNumber, learnedCallModes) {
+                                    getPreferredCallingMode(dragContact.phoneNumber)
+                                },
                                 onCall = {},
                                 onSelect = {},
                                 onCreateRule = {},
@@ -1112,7 +1179,7 @@ fun FavoritesScreen(
                 if (favContact != null) {
                     onDeleteFavorite(favContact)
                 } else {
-                    onAddFavorite(matchedContact.name, matchedContact.phoneNumber, matchedContact.label, matchedContact.photoUri)
+                    onAddFavorite(matchedContact.name, matchedContact.phoneNumber, matchedContact.label, matchedContact.photoUri, matchedContact.nickname)
                 }
             },
             onSetAsDefaultNumber = { newNum, newLabel ->
@@ -1120,7 +1187,7 @@ fun FavoritesScreen(
                     onUpdateFavoriteNumber(favContact, newNum, newLabel)
                     contactDetailsTarget = Pair(matchedContact, favContact.copy(phoneNumber = newNum, label = newLabel))
                 } else {
-                    onAddFavorite(matchedContact.name, newNum, newLabel, matchedContact.photoUri)
+                    onAddFavorite(matchedContact.name, newNum, newLabel, matchedContact.photoUri, matchedContact.nickname)
                 }
             },
             onClearDefaultNumber = {
@@ -1155,7 +1222,7 @@ fun FavoritesScreen(
             deviceContacts = deviceContacts,
             title = "Search Contacts to Favorite",
             onContactSelected = { name, number, photoUri ->
-                onAddFavorite(name, number, "Mobile", photoUri)
+                onAddFavorite(name, number, "Mobile", photoUri, null)
                 showContactPicker = false
             },
             onDismiss = { showContactPicker = false },
@@ -1179,12 +1246,11 @@ fun FavoritesScreen(
     }
 
     if (pendingCallConfirmation != null) {
-        val (name, number) = pendingCallConfirmation!!
-        val preferredMode = getPreferredCallingMode(number)
-        val isWhatsApp = preferredMode == "whatsapp"
+        val (name, number, requestedWhatsApp) = pendingCallConfirmation!!
+        val isWhatsApp = requestedWhatsApp || (getPreferredCallingMode(number) == "whatsapp")
         AlertDialog(
             onDismissRequest = { pendingCallConfirmation = null },
-            title = { Text("Call $name?") },
+            title = { Text(if (isWhatsApp) "Call $name on WhatsApp?" else "Call $name?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = "Number: $number")
@@ -1200,8 +1266,13 @@ fun FavoritesScreen(
                 Button(
                     onClick = {
                         val numToCall = number
+                        val callWa = isWhatsApp
                         pendingCallConfirmation = null
-                        onCallNumber(numToCall)
+                        if (callWa) {
+                            onCallWhatsApp(numToCall)
+                        } else {
+                            onCallNumber(numToCall)
+                        }
                     },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                         containerColor = if (isWhatsApp) Color(0xFF25D366) else Color(0xFF16A34A)
@@ -1213,6 +1284,76 @@ fun FavoritesScreen(
             dismissButton = {
                 TextButton(onClick = { pendingCallConfirmation = null }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (nicknameDialogTarget != null) {
+        val (targetContact, numberToFav) = nicknameDialogTarget!!
+        val isAdding = numberToFav != null
+        AlertDialog(
+            onDismissRequest = { nicknameDialogTarget = null },
+            title = { Text(if (isAdding) "Favorite Nickname (Optional)" else "Set Nickname") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (isAdding)
+                            "Give ${targetContact.name} a nickname, or skip to save without one."
+                        else
+                            "Enter a nickname for ${targetContact.name}:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = nicknameDialogText,
+                        onValueChange = { nicknameDialogText = it },
+                        label = { Text("Nickname") },
+                        placeholder = { Text("e.g. Mom, Boss, Honey") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = nicknameDialogText.trim()
+                        val effectiveNick = trimmed.ifBlank { null }
+                        if (isAdding) {
+                            val matchedPn = targetContact.phoneNumbers.firstOrNull { it.number == numberToFav }
+                            val label = matchedPn?.label ?: targetContact.label
+                            onAddFavorite(targetContact.name, numberToFav!!, label, targetContact.photoUri, effectiveNick)
+                            if (effectiveNick != null) {
+                                onUpdateContact(numberToFav, targetContact.name, numberToFav, label, effectiveNick)
+                                ContactHelper.updateContactNickname(context, numberToFav, effectiveNick, targetContact.contactId)
+                            }
+                        } else {
+                            val fav = favorites.firstOrNull { f ->
+                                f.name.equals(targetContact.name, ignoreCase = true) ||
+                                targetContact.phoneNumbers.any { it.number == f.phoneNumber }
+                            }
+                            if (fav != null) {
+                                onEditFavorite(fav, effectiveNick)
+                            }
+                            onUpdateContact(targetContact.phoneNumber, targetContact.name, targetContact.phoneNumber, targetContact.label, effectiveNick)
+                            ContactHelper.updateContactNickname(context, targetContact.phoneNumber, effectiveNick ?: "", targetContact.contactId)
+                        }
+                        nicknameDialogTarget = null
+                    }
+                ) {
+                    Text(if (isAdding && nicknameDialogText.isBlank()) "Save" else "Save Nickname")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (isAdding) {
+                        val matchedPn = targetContact.phoneNumbers.firstOrNull { it.number == numberToFav }
+                        val label = matchedPn?.label ?: targetContact.label
+                        onAddFavorite(targetContact.name, numberToFav!!, label, targetContact.photoUri, null)
+                    }
+                    nicknameDialogTarget = null
+                }) {
+                    Text(if (isAdding) "Skip" else "Cancel")
                 }
             }
         )

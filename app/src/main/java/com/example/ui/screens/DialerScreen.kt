@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -100,6 +102,13 @@ import com.example.util.DeviceContact
 import com.example.util.T9Helper
 import com.example.util.T9SearchResult
 import com.example.ui.components.QuickRecentsSection
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -128,6 +137,8 @@ fun DialerScreen(
     onAssignSpeedDialSlot: (Int, String, String, String?) -> Unit = { _, _, _, _ -> },
     onClearSpeedDialSlot: (Int) -> Unit = {},
     deviceContacts: List<DeviceContact> = emptyList(),
+    getPreferredCallingMode: (String) -> String = { "cellular" },
+    learnedCallModes: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     var showContactPicker by remember { mutableStateOf(false) }
@@ -463,6 +474,38 @@ fun DialerScreen(
                 .padding(top = 10.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            var selectionState by remember(number) {
+                mutableStateOf(TextRange(number.length))
+            }
+
+            val localOnDigitPress: (Char) -> Unit = { digit ->
+                val start = selectionState.start.coerceIn(0, number.length)
+                val end = selectionState.end.coerceIn(0, number.length)
+                val minSel = minOf(start, end)
+                val maxSel = maxOf(start, end)
+                val newText = number.substring(0, minSel) + digit + number.substring(maxSel)
+                selectionState = TextRange(minSel + 1)
+                onSelectContactNumber(newText)
+            }
+
+            val localOnDeleteDigit: () -> Unit = {
+                val start = selectionState.start.coerceIn(0, number.length)
+                val end = selectionState.end.coerceIn(0, number.length)
+                if (start == end) {
+                    if (start > 0) {
+                        val newText = number.substring(0, start - 1) + number.substring(start)
+                        selectionState = TextRange(start - 1)
+                        onSelectContactNumber(newText)
+                    }
+                } else {
+                    val minSel = minOf(start, end)
+                    val maxSel = maxOf(start, end)
+                    val newText = number.substring(0, minSel) + number.substring(maxSel)
+                    selectionState = TextRange(minSel)
+                    onSelectContactNumber(newText)
+                }
+            }
+
             // Dialed Number Display Area with Contact Picker / Overflow Menu & Backspace (Fixed 56.dp)
             Box(
                 modifier = Modifier
@@ -524,6 +567,21 @@ fun DialerScreen(
                                         showOverflowMenu = false
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Send Text Message (SMS)") },
+                                    onClick = {
+                                        val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))
+                                        context.startActivity(smsIntent)
+                                        showOverflowMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Send WhatsApp Message") },
+                                    onClick = {
+                                        ContactHelper.launchWhatsAppMessage(context, number)
+                                        showOverflowMenu = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -537,15 +595,34 @@ fun DialerScreen(
                             modifier = Modifier.weight(1f)
                         )
                     } else {
-                        Text(
-                            text = number,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
+                        val tFV = TextFieldValue(text = number, selection = selectionState)
+                        BasicTextField(
+                            value = tFV,
+                            onValueChange = { newValue ->
+                                selectionState = newValue.selection
+                                if (newValue.text != number) {
+                                    onSelectContactNumber(newValue.text)
+                                }
+                            },
+                            textStyle = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             modifier = Modifier
                                 .weight(1f)
-                                .testTag("dialer_number_display")
+                                .testTag("dialer_number_display"),
+                            decorationBox = { innerTextField ->
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    innerTextField()
+                                }
+                            }
                         )
                     }
 
@@ -558,7 +635,7 @@ fun DialerScreen(
                             .then(
                                 if (number.isNotEmpty()) {
                                     Modifier.combinedClickable(
-                                        onClick = onDeleteDigit,
+                                        onClick = localOnDeleteDigit,
                                         onLongClick = {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                             onClearDigits()
@@ -622,12 +699,12 @@ fun DialerScreen(
             Keypad(
                 compact = true,
                 speedDialMap = speedDialMap,
-                onDigitPress = onDigitPress,
+                onDigitPress = localOnDigitPress,
                 onDigitLongPress = { digit ->
                     when (digit) {
-                        '0' -> onDigitPress('+')
-                        '*' -> onDigitPress(',')
-                        '#' -> onDigitPress(';')
+                        '0' -> localOnDigitPress('+')
+                        '*' -> localOnDigitPress(',')
+                        '#' -> localOnDigitPress(';')
                         '1' -> {
                             val vmNumber = ContactHelper.getVoicemailNumber(context)
                             speedDialToast = "Voicemail ($vmNumber)"
@@ -750,89 +827,225 @@ fun DialerScreen(
                 }
             }
 
-            // Call Actions Row: Standard SIM Call Button + WhatsApp Voice Call Button (fixed size with non-intrusive preference highlight)
-            val normNum = number.replace(Regex("[^0-9+]"), "").takeLast(10)
-            val relevantCalls = recentCalls.filter { rc ->
-                val rcNorm = rc.phoneNumber.replace(Regex("[^0-9+]"), "").takeLast(10)
-                if (normNum.isNotBlank() && rcNorm.isNotBlank()) {
-                    rcNorm.endsWith(normNum) || normNum.endsWith(rcNorm)
-                } else false
-            }
-            val waCallsCount = relevantCalls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) == true }
-            val gsmCallsCount = relevantCalls.size - waCallsCount
-            val isWaPreferred = waCallsCount > gsmCallsCount && waCallsCount > 0
-            val isGsmPreferred = gsmCallsCount > waCallsCount && gsmCallsCount > 0
-
+            // Call Actions Grid (2x2): An elegant, non-interfering layout with high-fidelity buttons and situational intelligence highlights
+            val callingMode = if (number.isNotBlank()) getPreferredCallingMode(number) else "none"
+            val isWaPreferred = callingMode == "whatsapp"
+            val isGsmPreferred = callingMode == "cellular"
             val isDark = isSystemInDarkTheme()
+            val isNumEmpty = number.isBlank()
 
-            // Distinct Brand Colors for Keypad Action Buttons
-            val phoneBg = if (isGsmPreferred || (!isGsmPreferred && !isWaPreferred)) Color(0xFF059669) else Color(0xFF059669).copy(alpha = if (isDark) 0.25f else 0.15f)
-            val phoneContent = if (isGsmPreferred || (!isGsmPreferred && !isWaPreferred)) Color.White else Color(0xFF059669)
-
-            val waBg = if (isWaPreferred || (!isGsmPreferred && !isWaPreferred)) Color(0xFF25D366) else Color(0xFF25D366).copy(alpha = if (isDark) 0.25f else 0.15f)
-            val waContent = if (isWaPreferred || (!isGsmPreferred && !isWaPreferred)) Color.White else Color(0xFF1E7E34)
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
-                    .padding(vertical = 6.dp)
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Phone Call Hybrid Button (Icon + Text)
-                Button(
-                    onClick = { onPlaceCall(number, selectedCallReason) },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = phoneBg, contentColor = phoneContent),
-                    border = if (isGsmPreferred) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, phoneContent.copy(alpha = 0.3f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("dialer_call_button")
+                // Row 1: Text Message (Left) | Phone (Right)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    // --- Text Message ---
+                    val smsBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                    Card(
+                        onClick = {
+                            val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))
+                            context.startActivity(smsIntent)
+                        },
+                        enabled = !isNumEmpty,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = smsBgColor),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .then(if (isNumEmpty) Modifier.graphicsLayer(alpha = 0.45f) else Modifier)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Phone Call",
-                            tint = phoneContent,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Phone Call",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = phoneContent
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF0284C7).copy(alpha = if (isDark) 0.25f else 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = "Text Message",
+                                    tint = Color(0xFF0284C7),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = "Text Message",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // --- Phone ---
+                    val phoneBorderColor = if (isGsmPreferred) Color(0xFF059669) else MaterialTheme.colorScheme.outlineVariant
+                    val phoneBgColor = if (isGsmPreferred) {
+                        Color(0xFF059669).copy(alpha = if (isDark) 0.15f else 0.08f)
+                    } else {
+                        if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                    }
+                    val phoneIconBg = if (isGsmPreferred) Color(0xFF059669) else Color(0xFF059669).copy(alpha = if (isDark) 0.25f else 0.12f)
+                    val phoneIconColor = if (isGsmPreferred) Color.White else Color(0xFF059669)
+
+                    Card(
+                        onClick = { onPlaceCall(number, selectedCallReason) },
+                        enabled = !isNumEmpty,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = phoneBgColor),
+                        border = BorderStroke(if (isGsmPreferred) 2.dp else 1.dp, phoneBorderColor),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .then(if (isNumEmpty) Modifier.graphicsLayer(alpha = 0.45f) else Modifier)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(phoneIconBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "Phone Call",
+                                    tint = phoneIconColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = "Phone",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
-                // WhatsApp Call Hybrid Button (Icon + Text)
-                Button(
-                    onClick = { onPlaceWhatsAppCall(number.ifBlank { "+91" }) },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = waBg, contentColor = waContent),
-                    border = if (isWaPreferred) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, waContent.copy(alpha = 0.3f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("whatsapp_call_button")
+                // Row 2: WhatsApp - Msg (Left) | WhatsApp - Voice (Right)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    // --- WhatsApp - Msg ---
+                    val waMsgBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                    Card(
+                        onClick = { ContactHelper.launchWhatsAppMessage(context, number) },
+                        enabled = !isNumEmpty,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = waMsgBgColor),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .then(if (isNumEmpty) Modifier.graphicsLayer(alpha = 0.45f) else Modifier)
                     ) {
-                        WhatsAppIcon(modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "WhatsApp",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = waContent
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF0D9488).copy(alpha = if (isDark) 0.25f else 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = "WhatsApp Msg",
+                                    tint = Color(0xFF0D9488),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = "WhatsApp - Msg",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // --- WhatsApp - Voice ---
+                    val waBorderColor = if (isWaPreferred) Color(0xFF25D366) else MaterialTheme.colorScheme.outlineVariant
+                    val waBgColor = if (isWaPreferred) {
+                        Color(0xFF25D366).copy(alpha = if (isDark) 0.15f else 0.08f)
+                    } else {
+                        if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                    }
+                    val waIconBg = if (isWaPreferred) Color(0xFF25D366) else Color(0xFF25D366).copy(alpha = if (isDark) 0.25f else 0.12f)
+                    val waIconColor = if (isWaPreferred) Color.White else Color(0xFF1E7E34)
+
+                    Card(
+                        onClick = { onPlaceWhatsAppCall(number) },
+                        enabled = !isNumEmpty,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = waBgColor),
+                        border = BorderStroke(if (isWaPreferred) 2.dp else 1.dp, waBorderColor),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .then(if (isNumEmpty) Modifier.graphicsLayer(alpha = 0.45f) else Modifier)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(waIconBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                WhatsAppIcon(
+                                    modifier = Modifier.size(16.dp),
+                                    tint = waIconColor
+                                )
+                            }
+                            Text(
+                                text = "WhatsApp - Voice",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }

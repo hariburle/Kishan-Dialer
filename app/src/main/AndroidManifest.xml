@@ -90,6 +90,16 @@
             </intent-filter>
         </service>
 
+        <!-- CallRedirectionService for intercepting outgoing calls from Bluetooth car systems, headsets, and wearables -->
+        <service
+            android:name=".telecom.OmniCallRedirectionService"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
+            </intent-filter>
+        </service>
+
         <!-- Foreground Service for ongoing call notification and lockscreen banner -->
         <service
             android:name=".telecom.CallForegroundService"

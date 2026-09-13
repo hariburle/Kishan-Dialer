@@ -84,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -162,6 +163,10 @@ fun ContactDetailsBottomSheet(
         mutableStateOf(favoriteContact?.phoneNumber ?: contact.phoneNumber)
     }
     var numberForActionMenu by remember { mutableStateOf<ContactPhoneNumber?>(null) }
+    val preferredModes = remember { mutableStateMapOf<String, String>() }
+    var showNicknameEditDialog by remember { mutableStateOf(false) }
+    var directNicknameText by remember(contact.nickname) { mutableStateOf(contact.nickname ?: "") }
+    var currentDisplayNickname by remember(contact.nickname) { mutableStateOf(contact.nickname ?: "") }
 
     var contactCallHistory by remember { mutableStateOf<List<RecentCall>>(emptyList()) }
     var isLoadingHistory by remember { mutableStateOf(true) }
@@ -223,24 +228,6 @@ fun ContactDetailsBottomSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(
-                            onClick = {
-                                if (contact.contactId != null && contact.contactId > 0 && !contact.isAppOnly) {
-                                    ContactHelper.launchContactEditor(context, contact)
-                                    onDismiss()
-                                } else {
-                                    showEditDialog = true
-                                }
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit Contact",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
                         IconButton(
                             onClick = { showDeleteConfirmationDialog = true },
                             modifier = Modifier.size(36.dp)
@@ -371,13 +358,39 @@ fun ContactDetailsBottomSheet(
                         }
                     }
 
-                    if (!contact.nickname.isNullOrBlank()) {
-                        Text(
-                            text = "\"${contact.nickname}\"",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                directNicknameText = currentDisplayNickname
+                                showNicknameEditDialog = true
+                            }
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        if (currentDisplayNickname.isNotBlank()) {
+                            Text(
+                                text = "\"$currentDisplayNickname\"",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                text = "+ Add Nickname",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Nickname",
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            modifier = Modifier.size(13.dp)
                         )
                     }
 
@@ -755,7 +768,7 @@ fun ContactDetailsBottomSheet(
                             Spacer(modifier = Modifier.height(6.dp))
 
                             // Row 2: Preferred Channel Selector (Teach mode without placing calls)
-                            val currentPref = getPreferredCallingMode(pn.number)
+                            val currentPref = preferredModes[pn.number] ?: getPreferredCallingMode(pn.number)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -770,6 +783,7 @@ fun ContactDetailsBottomSheet(
                                     FilterChip(
                                         selected = currentPref == "cellular",
                                         onClick = {
+                                            preferredModes[pn.number] = "cellular"
                                             onSaveLearnedCallMode(pn.number, "cellular")
                                             Toast.makeText(context, "★ Preferred mode set: Phone", Toast.LENGTH_SHORT).show()
                                         },
@@ -782,6 +796,7 @@ fun ContactDetailsBottomSheet(
                                     FilterChip(
                                         selected = currentPref == "whatsapp",
                                         onClick = {
+                                            preferredModes[pn.number] = "whatsapp"
                                             onSaveLearnedCallMode(pn.number, "whatsapp")
                                             Toast.makeText(context, "★ Preferred mode set: WhatsApp", Toast.LENGTH_SHORT).show()
                                         },
@@ -794,6 +809,7 @@ fun ContactDetailsBottomSheet(
                                     if (currentPref == "cellular" || currentPref == "whatsapp") {
                                         AssistChip(
                                             onClick = {
+                                                preferredModes[pn.number] = "ask"
                                                 onSaveLearnedCallMode(pn.number, "ask")
                                                 Toast.makeText(context, "★ Preference reset to Ask & Learn", Toast.LENGTH_SHORT).show()
                                             },
@@ -1474,6 +1490,52 @@ fun ContactDetailsBottomSheet(
                     onToggleFavorite()
                 }
                 showCreateContactDialog = false
+            }
+        )
+    }
+
+    if (showNicknameEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showNicknameEditDialog = false },
+            title = { Text("Set Nickname", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter a nickname for ${contact.name}:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = directNicknameText,
+                        onValueChange = { directNicknameText = it },
+                        label = { Text("Nickname") },
+                        placeholder = { Text("e.g. Mom, Boss, Honey") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = directNicknameText.trim()
+                        currentDisplayNickname = trimmed
+                        onEditContact(contact.name, contact.phoneNumber, contact.label, trimmed.ifBlank { null })
+                        ContactHelper.updateContactNickname(context, contact.phoneNumber, trimmed, contact.contactId)
+                        showNicknameEditDialog = false
+                        Toast.makeText(context, "Nickname updated and synced", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showNicknameEditDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancel")
+                }
             }
         )
     }

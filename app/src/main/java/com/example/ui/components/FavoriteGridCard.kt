@@ -72,7 +72,6 @@ fun FavoriteGridCard(
     val shadowElevation by animateDpAsState(
         targetValue = if (isFloatingOverlay) 16.dp else when (cardDesign) {
             FavCardDesign.MODERN_BENTO -> 1.dp
-            FavCardDesign.QUICK_ACTION -> 1.dp
             FavCardDesign.MATERIAL_YOU -> 0.dp
         },
         label = "drag_shadow"
@@ -102,15 +101,12 @@ fun FavoriteGridCard(
 
     val cardShape = when (cardDesign) {
         FavCardDesign.MODERN_BENTO -> RoundedCornerShape(18.dp)
-        FavCardDesign.QUICK_ACTION -> RoundedCornerShape(14.dp)
         FavCardDesign.MATERIAL_YOU -> RoundedCornerShape(22.dp)
     }
 
     val cardBorder = if (cardDesign == FavCardDesign.MATERIAL_YOU && !isFloatingOverlay) {
         BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
     } else if (cardDesign == FavCardDesign.MODERN_BENTO && !isFloatingOverlay) {
-        BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-    } else if (cardDesign == FavCardDesign.QUICK_ACTION && !isFloatingOverlay) {
         BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
     } else {
         null
@@ -123,7 +119,6 @@ fun FavoriteGridCard(
     } else {
         when (cardDesign) {
             FavCardDesign.MODERN_BENTO -> MaterialTheme.colorScheme.surface
-            FavCardDesign.QUICK_ACTION -> MaterialTheme.colorScheme.surface
             FavCardDesign.MATERIAL_YOU -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
         }
     }
@@ -150,7 +145,6 @@ fun FavoriteGridCard(
                     // Avatar
                     val avatarShape = when (cardDesign) {
                         FavCardDesign.MODERN_BENTO -> RoundedCornerShape(12.dp)
-                        FavCardDesign.QUICK_ACTION -> CircleShape
                         FavCardDesign.MATERIAL_YOU -> RoundedCornerShape(14.dp)
                     }
                     val avatarSize = if (cardDesign == FavCardDesign.MODERN_BENTO) 42.dp else 38.dp
@@ -182,9 +176,9 @@ fun FavoriteGridCard(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Name, Phone Number & Label
+                    // Name, Nickname, Phone Number & Label
                     Column(modifier = Modifier.weight(1f)) {
-                        val displayName = if (!contact.nickname.isNullOrBlank()) contact.nickname else contact.name
+                        val displayName = if (!contact.nickname.isNullOrBlank()) contact.nickname!! else contact.name
                         Text(
                             text = displayName,
                             style = MaterialTheme.typography.bodyMedium,
@@ -202,16 +196,6 @@ fun FavoriteGridCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (contact.label.isNotBlank()) {
-                            Text(
-                                text = contact.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
 
                     // Speed Dial #slot Badge (#number instead of Key #number)
@@ -419,63 +403,6 @@ fun FavoriteGridCard(
                                                 color = MaterialTheme.colorScheme.primary
                                             )
                                         }
-                                    }
-                                }
-                            }
-                        }
-                        FavCardDesign.QUICK_ACTION -> {
-                            // Quick-Action Tile: Prominent round call action buttons
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (preferredCallingMode == "ask" || preferredCallingMode == "ask_always") {
-                                    FilledIconButton(
-                                        onClick = onCall,
-                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = Color(0xFF16A34A),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Call, contentDescription = "Phone Call", modifier = Modifier.size(15.dp))
-                                    }
-                                    FilledIconButton(
-                                        onClick = onCallWhatsApp,
-                                        modifier = Modifier.size(30.dp).testTag("fav_wa_btn_${contact.id}"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = Color(0xFF25D366),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        WhatsAppIcon(modifier = Modifier.size(16.dp))
-                                    }
-                                } else if (preferredCallingMode == "whatsapp") {
-                                    FilledIconButton(
-                                        onClick = onCallWhatsApp,
-                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = Color(0xFF25D366),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        WhatsAppIcon(modifier = Modifier.size(16.dp))
-                                    }
-                                } else {
-                                    FilledIconButton(
-                                        onClick = onCall,
-                                        modifier = Modifier.size(30.dp).testTag("fav_call_btn_${contact.id}"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = Color(0xFF16A34A),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Call,
-                                            contentDescription = "Call ${contact.name}",
-                                            modifier = Modifier.size(15.dp)
-                                        )
                                     }
                                 }
                             }

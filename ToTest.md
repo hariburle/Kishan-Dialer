@@ -259,6 +259,41 @@ Mark `[x]` on the checkbox for each task once you verify it. Each section below 
 - **Expected Result**:
   - Action buttons render as wide Hybrid Buttons displaying both Icon AND Text Label (`[ 📞 Phone Call ]` in emerald `#059669` and `[ 💬 WhatsApp ]` in signature `#25D366`).
 
+### 23. Task 30 (Phase 7): Keypad 2x2 Call Action Grid & Preference Highlighting
+- [ ] **To Test**
+- **Test Steps**:
+  1. Navigate to the Keypad tab and enter a phone number.
+  2. Inspect the 4 call action buttons laid out in a 2x2 grid (`Text Message`, `Phone`, `WhatsApp - Msg`, `WhatsApp - Voice`).
+  3. Enter a number known to prefer WhatsApp or Phone.
+- **Expected Result**:
+  - The 4 buttons render cleanly in a non-scrolling 2x2 grid.
+  - The preferred channel is emphasized with a dynamic high-contrast container border without intrusive badge labels.
+
+### 24. Task 31 (Phase 7): WhatsApp Dark Mode Icon Contrast
+- [ ] **To Test**
+- **Test Steps**:
+  1. Switch device to Dark Theme.
+  2. Inspect the WhatsApp icons on Keypad 2x2 grid, Favorites cards, and Contact details.
+- **Expected Result**:
+  - The WhatsApp icon features a crisp white outer contour ring around the bubble, preventing it from blending into dark backgrounds.
+
+### 25. Task 32 (Phase 7): External Outgoing Call Redirection Service
+- [ ] **To Test**
+- **Test Steps**:
+  1. Set OmniDial as Default Phone App.
+  2. Initiate an outgoing call from a connected Bluetooth vehicle head-unit, smartwatch, or assistant to a contact with WhatsApp preference.
+- **Expected Result**:
+  - `OmniCallRedirectionService` intercepts the cellular call and routes it directly to WhatsApp VoIP.
+
+### 26. Task 33 (Phase 7): Multi-Version APK Downloads on Website
+- [ ] **To Test**
+- **Test Steps**:
+  1. Open `docs/index.html` in browser.
+  2. Scroll down to the **Release Notes & Version History** section.
+  3. Verify download links for **v1.1.0** (`OmniDial-v1.1.0.apk`) and **v1.0.0** (`OmniDial-v1.0.0.apk`).
+- **Expected Result**:
+  - Both release versions have distinct download buttons, version badges, and changelog lists.
+
 ---
 
 ### 💬 Feedback & Notes (If any test fails or needs adjustment)

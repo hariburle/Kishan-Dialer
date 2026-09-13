@@ -96,7 +96,8 @@ class MainViewModel(
     }
 
     private fun loadLearnedCallModes(): Map<String, String> {
-        val rawSet = prefs.getStringSet("whatsapp_learned_choices", emptySet()) ?: emptySet()
+        val rawSet = (prefs.getStringSet("whatsapp_learned_choices", emptySet()) ?: emptySet()) +
+                     (prefs.getStringSet("learned_call_modes", emptySet()) ?: emptySet())
         val map = mutableMapOf<String, String>()
         rawSet.forEach { entry ->
             val parts = entry.split(":")
@@ -117,12 +118,18 @@ class MainViewModel(
         _learnedCallModes.value = current
 
         val set = current.map { "${it.key}:${it.value}" }.toSet()
-        prefs.edit().putStringSet("whatsapp_learned_choices", HashSet(set)).apply()
+        prefs.edit()
+            .putStringSet("whatsapp_learned_choices", HashSet(set))
+            .putStringSet("learned_call_modes", HashSet(set))
+            .apply()
     }
 
     fun resetWhatsAppChoices() {
         _learnedCallModes.value = emptyMap()
-        prefs.edit().remove("whatsapp_learned_choices").apply()
+        prefs.edit()
+            .remove("whatsapp_learned_choices")
+            .remove("learned_call_modes")
+            .apply()
     }
 
     // Call method selection dialog state
@@ -161,6 +168,24 @@ class MainViewModel(
     fun setConfirmFavoritesCall(enabled: Boolean) {
         _confirmFavoritesCall.value = enabled
         prefs.edit().putBoolean("confirm_fav_calls", enabled).apply()
+    }
+
+    // Speed Dial Confirmation: Ask confirmation before speed-dialing
+    private val _confirmSpeedDialCall = MutableStateFlow(prefs.getBoolean("confirm_speed_dial_call", true))
+    val confirmSpeedDialCall: StateFlow<Boolean> = _confirmSpeedDialCall.asStateFlow()
+
+    fun setConfirmSpeedDialCall(enabled: Boolean) {
+        _confirmSpeedDialCall.value = enabled
+        prefs.edit().putBoolean("confirm_speed_dial_call", enabled).apply()
+    }
+
+    // Speed Dial Assignment: Ask to assign for unassigned numbers
+    private val _askToAssignUnassignedSpeedDial = MutableStateFlow(prefs.getBoolean("ask_assign_unassigned_speed_dial", true))
+    val askToAssignUnassignedSpeedDial: StateFlow<Boolean> = _askToAssignUnassignedSpeedDial.asStateFlow()
+
+    fun setAskToAssignUnassignedSpeedDial(enabled: Boolean) {
+        _askToAssignUnassignedSpeedDial.value = enabled
+        prefs.edit().putBoolean("ask_assign_unassigned_speed_dial", enabled).apply()
     }
 
     // Default start tab: 0 (Favorites)
@@ -223,6 +248,10 @@ class MainViewModel(
     private val _isDefaultDialer = MutableStateFlow(RoleHelper.isDefaultDialer(appContext))
     val isDefaultDialer: StateFlow<Boolean> = _isDefaultDialer.asStateFlow()
 
+    // Call Redirection Role Status (for Bluetooth/Car call interception)
+    private val _isCallRedirectionRoleHeld = MutableStateFlow(RoleHelper.isCallRedirectionRoleHeld(appContext))
+    val isCallRedirectionRoleHeld: StateFlow<Boolean> = _isCallRedirectionRoleHeld.asStateFlow()
+
     // Confirmation dialog before any changes to Google Account Contacts
     private val _pendingCloudConfirmation = MutableStateFlow<CloudContactConfirmation?>(null)
     val pendingCloudConfirmation: StateFlow<CloudContactConfirmation?> = _pendingCloudConfirmation.asStateFlow()
@@ -257,11 +286,17 @@ class MainViewModel(
 
     fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
+        val action = intent.action
+        val type = intent.type
         val navTab = intent.getStringExtra("EXTRA_NAV_TAB")
         val navTabIndex = intent.getIntExtra("EXTRA_NAV_TAB_INDEX", -1)
         val highlightNum = intent.getStringExtra("EXTRA_HIGHLIGHT_NUMBER")
 
-        if (navTab == "RECENTS" || navTabIndex == 1) {
+        if (navTab == "RECENTS" || 
+            navTabIndex == 1 ||
+            action == "android.telecom.action.SHOW_MISSED_CALLS_NOTIFICATION" ||
+            type == "vnd.android.cursor.dir/calls"
+        ) {
             _pendingNavTab.value = 1
         } else if (navTabIndex in 0..4) {
             _pendingNavTab.value = navTabIndex
@@ -364,14 +399,8 @@ class MainViewModel(
                 val handledRoomIds = mutableSetOf<Long>()
 
                 systemCalls.forEach { sysCall ->
-                    val sysNorm = normDigits(sysCall.phoneNumber)
                     val matchingRoomCall = roomCalls.firstOrNull { roomCall ->
-                        val roomNorm = normDigits(roomCall.phoneNumber)
-                        val numMatches = if (sysNorm.isNotBlank() && roomNorm.isNotBlank()) {
-                            sysNorm == roomNorm
-                        } else {
-                            roomCall.phoneNumber.equals(sysCall.phoneNumber, ignoreCase = true)
-                        }
+                        val numMatches = ContactHelper.isSamePhoneNumber(sysCall.phoneNumber, roomCall.phoneNumber)
                         if (!numMatches) return@firstOrNull false
 
                         // Check time window: Account for system CallLog storing call start time while in-app logger might record disconnect time
@@ -408,10 +437,8 @@ class MainViewModel(
                 merged.sortByDescending { it.timestamp }
                 val deduplicated = mutableListOf<RecentCall>()
                 for (call in merged) {
-                    val callNorm = normDigits(call.phoneNumber)
                     val existingIdx = deduplicated.indexOfFirst { prev ->
-                        val prevNorm = normDigits(prev.phoneNumber)
-                        val numMatch = if (callNorm.isNotBlank() && prevNorm.isNotBlank()) callNorm == prevNorm else call.phoneNumber.equals(prev.phoneNumber, ignoreCase = true)
+                        val numMatch = ContactHelper.isSamePhoneNumber(call.phoneNumber, prev.phoneNumber)
                         val typeMatch = prev.callType == call.callType || (prev.callType in listOf(1, 3) && call.callType in listOf(1, 3))
                         val timeGap = Math.abs(prev.timestamp - call.timestamp)
                         val maxDur = Math.max(prev.durationSeconds, call.durationSeconds) * 1000L
@@ -772,6 +799,10 @@ class MainViewModel(
         _isDefaultDialer.value = RoleHelper.isDefaultDialer(appContext)
     }
 
+    fun refreshCallRedirectionStatus() {
+        _isCallRedirectionRoleHeld.value = RoleHelper.isCallRedirectionRoleHeld(appContext)
+    }
+
     fun appendDigit(digit: Char) {
         _dialerNumber.value += digit
     }
@@ -916,7 +947,8 @@ class MainViewModel(
 
         // 1. Check explicitly learned choice
         val learned = _learnedCallModes.value[clean]
-            ?: if (digits.isNotBlank()) _learnedCallModes.value[digits] else null
+            ?: (if (digits.isNotBlank()) _learnedCallModes.value[digits] else null)
+            ?: _learnedCallModes.value.entries.firstOrNull { ContactHelper.isSamePhoneNumber(it.key, clean) }?.value
         if (learned != null) return learned
 
         // 2. If user configured all international to WhatsApp, check international based on phone location
@@ -926,8 +958,7 @@ class MainViewModel(
 
         // 3. Count past WhatsApp calls vs regular cellular calls in recent calls
         val calls = recentCalls.value.filter { call ->
-            val callDigits = call.phoneNumber.filter { it.isDigit() }.takeLast(10)
-            call.phoneNumber == clean || (digits.length >= 7 && callDigits == digits)
+            ContactHelper.isSamePhoneNumber(call.phoneNumber, clean)
         }
         val waCount = calls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) == true }
         val gsmCount = calls.count { it.callReason?.contains("WhatsApp", ignoreCase = true) != true }
@@ -943,13 +974,28 @@ class MainViewModel(
 
     fun lookupContactByNumber(phoneNumber: String): DeviceContact? {
         val fav = favorites.value.firstOrNull {
-            ContactHelper.matchesNumberQuery(it.phoneNumber, phoneNumber)
+            ContactHelper.isSamePhoneNumber(it.phoneNumber, phoneNumber)
         }
         if (fav != null) return DeviceContact(fav.name, fav.phoneNumber, fav.label, fav.photoUri)
-        return deviceContacts.value.firstOrNull { dc ->
-            ContactHelper.matchesNumberQuery(dc.phoneNumber, phoneNumber) ||
-            dc.phoneNumbers.any { ContactHelper.matchesNumberQuery(it.number, phoneNumber) }
+
+        val matchedDc = deviceContacts.value.firstOrNull { dc ->
+            ContactHelper.isSamePhoneNumber(dc.phoneNumber, phoneNumber) ||
+            dc.phoneNumbers.any { ContactHelper.isSamePhoneNumber(it.number, phoneNumber) }
         }
+        if (matchedDc != null) {
+            val matchingItem = matchedDc.phoneNumbers.firstOrNull {
+                ContactHelper.isSamePhoneNumber(it.number, phoneNumber)
+            }
+            return if (matchingItem != null) {
+                matchedDc.copy(
+                    phoneNumber = matchingItem.number,
+                    label = matchingItem.label
+                )
+            } else {
+                matchedDc
+            }
+        }
+        return null
     }
 
     /**
@@ -1034,6 +1080,22 @@ class MainViewModel(
                 reminderTime = reminderTime
             )
             repository.updateRecentCall(updated)
+            if (reminderTime != null && reminderTime > System.currentTimeMillis()) {
+                com.example.telecom.ReminderScheduler.scheduleReminder(
+                    context = appContext,
+                    callId = updated.id,
+                    phoneNumber = updated.phoneNumber,
+                    callerName = updated.callerName,
+                    note = updated.note,
+                    reminderEpoch = reminderTime
+                )
+            } else {
+                com.example.telecom.ReminderScheduler.cancelReminder(
+                    context = appContext,
+                    callId = updated.id,
+                    phoneNumber = updated.phoneNumber
+                )
+            }
         }
     }
 
@@ -1082,9 +1144,15 @@ class MainViewModel(
     val currentAudioRoute: StateFlow<Int> = CallManager.currentAudioRoute
     val supportedAudioRoutes: StateFlow<Int> = CallManager.supportedAudioRoutes
     val bluetoothDeviceName: StateFlow<String?> = CallManager.bluetoothDeviceName
+    val availableBluetoothDevices: StateFlow<List<com.example.telecom.BluetoothDeviceItem>> = CallManager.availableBluetoothDevices
+    val activeBluetoothDeviceAddress: StateFlow<String?> = CallManager.activeBluetoothDeviceAddress
 
     fun setAudioRoute(route: Int) {
         CallManager.setAudioRoute(route)
+    }
+
+    fun selectBluetoothDevice(address: String) {
+        CallManager.selectBluetoothDevice(address)
     }
 
     fun savePostCallNote(phoneNumber: String, note: String?, reminderTime: Long?) {
@@ -1098,24 +1166,41 @@ class MainViewModel(
                 repository.getLatestRecentCallForNumber(phoneNumber)
             }
 
-            if (existing != null) {
-                repository.updateRecentCall(
-                    existing.copy(
-                        note = cleanNote,
-                        reminderTime = reminderTime
-                    )
+            val savedCall = if (existing != null) {
+                val up = existing.copy(
+                    note = cleanNote,
+                    reminderTime = reminderTime
+                )
+                repository.updateRecentCall(up)
+                up
+            } else {
+                val newCall = RecentCall(
+                    phoneNumber = phoneNumber,
+                    callerName = phoneNumber,
+                    callType = 2,
+                    timestamp = System.currentTimeMillis(),
+                    durationSeconds = 0,
+                    note = cleanNote,
+                    reminderTime = reminderTime
+                )
+                val newId = repository.insertRecentCall(newCall)
+                newCall.copy(id = newId)
+            }
+
+            if (reminderTime != null && reminderTime > System.currentTimeMillis()) {
+                com.example.telecom.ReminderScheduler.scheduleReminder(
+                    context = appContext,
+                    callId = savedCall.id,
+                    phoneNumber = savedCall.phoneNumber,
+                    callerName = savedCall.callerName,
+                    note = savedCall.note,
+                    reminderEpoch = reminderTime
                 )
             } else {
-                repository.insertRecentCall(
-                    RecentCall(
-                        phoneNumber = phoneNumber,
-                        callerName = phoneNumber,
-                        callType = 2,
-                        timestamp = System.currentTimeMillis(),
-                        durationSeconds = 0,
-                        note = cleanNote,
-                        reminderTime = reminderTime
-                    )
+                com.example.telecom.ReminderScheduler.cancelReminder(
+                    context = appContext,
+                    callId = savedCall.id,
+                    phoneNumber = savedCall.phoneNumber
                 )
             }
         }
@@ -1727,6 +1812,8 @@ class MainViewModel(
                 _callAnswerStyle.value = prefs.getString("call_answer_style", "swipe_slider") ?: "swipe_slider"
                 _favoriteCardStyle.value = prefs.getString("favorite_card_style", "bento") ?: "bento"
                 _confirmFavoritesCall.value = prefs.getBoolean("confirm_fav_calls", true)
+                _confirmSpeedDialCall.value = prefs.getBoolean("confirm_speed_dial_call", true)
+                _askToAssignUnassignedSpeedDial.value = prefs.getBoolean("ask_assign_unassigned_speed_dial", true)
                 _defaultStartTab.value = prefs.getInt("default_start_tab", 0)
                 _swipeToSwitchPanels.value = prefs.getBoolean("swipe_to_switch_panels", true)
                 _notSpamWhitelist.value = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
@@ -1759,6 +1846,8 @@ class MainViewModel(
                 _callAnswerStyle.value = prefs.getString("call_answer_style", "swipe_slider") ?: "swipe_slider"
                 _favoriteCardStyle.value = prefs.getString("favorite_card_style", "bento") ?: "bento"
                 _confirmFavoritesCall.value = prefs.getBoolean("confirm_fav_calls", true)
+                _confirmSpeedDialCall.value = prefs.getBoolean("confirm_speed_dial_call", true)
+                _askToAssignUnassignedSpeedDial.value = prefs.getBoolean("ask_assign_unassigned_speed_dial", true)
                 _defaultStartTab.value = prefs.getInt("default_start_tab", 0)
                 _swipeToSwitchPanels.value = prefs.getBoolean("swipe_to_switch_panels", true)
                 _notSpamWhitelist.value = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()

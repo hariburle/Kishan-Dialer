@@ -1,7 +1,12 @@
 package com.example.telecom
 
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
 import android.telecom.Call
 import android.telecom.CallAudioState
@@ -34,7 +39,9 @@ data class ActiveCallInfo(
     val isSimulated: Boolean = false,
     val photoUri: String? = null,
     val callReason: String? = null,
-    val communityInfo: com.example.util.CommunityCallerInfo? = null
+    val communityInfo: com.example.util.CommunityCallerInfo? = null,
+    val nickname: String? = null,
+    val numberLabel: String? = null
 )
 
 data class AutomationStep(
@@ -43,6 +50,13 @@ data class AutomationStep(
     val isRunning: Boolean = true,
     val completed: Boolean = false,
     val error: String? = null
+)
+
+data class BluetoothDeviceItem(
+    val name: String,
+    val address: String,
+    val isCar: Boolean = false,
+    val isHeadphone: Boolean = false
 )
 
 object CallManager {
@@ -73,6 +87,12 @@ object CallManager {
 
     private val _bluetoothDeviceName = MutableStateFlow<String?>(null)
     val bluetoothDeviceName: StateFlow<String?> = _bluetoothDeviceName.asStateFlow()
+
+    private val _availableBluetoothDevices = MutableStateFlow<List<BluetoothDeviceItem>>(emptyList())
+    val availableBluetoothDevices: StateFlow<List<BluetoothDeviceItem>> = _availableBluetoothDevices.asStateFlow()
+
+    private val _activeBluetoothDeviceAddress = MutableStateFlow<String?>(null)
+    val activeBluetoothDeviceAddress: StateFlow<String?> = _activeBluetoothDeviceAddress.asStateFlow()
 
     private val _automationState = MutableStateFlow<AutomationStep?>(null)
     val automationState: StateFlow<AutomationStep?> = _automationState.asStateFlow()
@@ -110,19 +130,32 @@ object CallManager {
         val number = extractPhoneNumber(call)
         val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val communityInfo = if (lookedUp == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
+        val favContact = try {
+            runBlocking {
+                val dao = AppDatabase.getInstance(context).appDao()
+                dao.getAllFavoritesList().firstOrNull {
+                    ContactHelper.isSamePhoneNumber(it.phoneNumber, number)
+                }
+            }
+        } catch (_: Exception) { null }
+
+        val communityInfo = if (lookedUp == null && favContact == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
         val isIncoming = call.state == Call.STATE_RINGING
+
+        val resolvedNickname = lookedUp?.nickname?.ifBlank { null } ?: favContact?.nickname?.ifBlank { null }
+        val resolvedLabel = lookedUp?.label?.ifBlank { null } ?: favContact?.label?.ifBlank { null } ?: "Mobile"
 
         val name = when {
             isVoicemail -> "Voicemail"
             lookedUp != null -> lookedUp.name
+            favContact != null -> favContact.name
             communityInfo != null -> communityInfo.name
             !call.details?.callerDisplayName.isNullOrBlank() -> call.details!!.callerDisplayName
             isIncoming -> "Incoming Caller"
             number.isNotBlank() -> number
             else -> "Outgoing Call"
         }
-        val photoUri = lookedUp?.photoUri
+        val photoUri = lookedUp?.photoUri ?: favContact?.photoUri
 
         val isWhitelisted = isWhitelistedOrRuleMatched(context, number)
         val isCarrierSpamThreat = isIncoming && !isWhitelisted && isCarrierSpam(call, number, name)
@@ -178,7 +211,9 @@ object CallManager {
             connectTimeMillis = if (call.state == Call.STATE_ACTIVE) System.currentTimeMillis() else 0L,
             isSimulated = false,
             photoUri = photoUri,
-            communityInfo = communityInfo
+            communityInfo = communityInfo,
+            nickname = resolvedNickname,
+            numberLabel = resolvedLabel
         )
         _activeCall.value = callInfo
 
@@ -359,12 +394,11 @@ object CallManager {
     }
 
     private fun isWhitelistedOrRuleMatched(context: Context, number: String): Boolean {
-        val normNum = number.filter { it.isDigit() }.takeLast(10)
-        if (normNum.isBlank()) return false
+        if (number.isBlank()) return false
         try {
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             val notSpamSet = prefs.getStringSet("not_spam_whitelist", emptySet()) ?: emptySet()
-            if (notSpamSet.any { it == number || (normNum.length >= 7 && it.filter { c -> c.isDigit() }.takeLast(10) == normNum) }) {
+            if (notSpamSet.any { ContactHelper.isSamePhoneNumber(it, number) }) {
                 Log.d(TAG, "Number $number is in user Not-Spam Whitelist. Whitelisted from carrier spam filter.")
                 return true
             }
@@ -381,8 +415,7 @@ object CallManager {
 
             val favs = runBlocking { dao.getAllFavoritesList() }
             val isFav = favs.any { f ->
-                val fNorm = f.phoneNumber.filter { it.isDigit() }.takeLast(10)
-                fNorm.isNotBlank() && fNorm == normNum
+                ContactHelper.isSamePhoneNumber(f.phoneNumber, number)
             }
             if (isFav) {
                 Log.d(TAG, "Number $number is in Starred Favorites. Whitelisted from carrier spam filter.")
@@ -668,15 +701,155 @@ object CallManager {
         _supportedAudioRoutes.value = audioState.supportedRouteMask
         _isSpeakerOn.value = (audioState.route == CallAudioState.ROUTE_SPEAKER)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val supportedBt = audioState.supportedBluetoothDevices.toList()
+            val btList = supportedBt.mapIndexed { index, device ->
+                resolveBluetoothDevice(device, index, supportedBt.size)
+            }
+            _availableBluetoothDevices.value = btList
+            _activeBluetoothDeviceAddress.value = audioState.activeBluetoothDevice?.address
+        }
+
         val btDevice = audioState.activeBluetoothDevice
-        _bluetoothDeviceName.value = btDevice?.let {
-            try { it.name } catch (e: SecurityException) { "Bluetooth Device" }
+        _bluetoothDeviceName.value = btDevice?.let { device ->
+            resolveBluetoothDevice(device, 0, 1).name
         } ?: if ((audioState.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH) != 0) "Bluetooth Device" else null
+    }
+
+    private fun resolveBluetoothDevice(device: BluetoothDevice, index: Int, totalDevices: Int): BluetoothDeviceItem {
+        var resolvedName: String? = null
+
+        // 1. Try device.alias (API 30+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                resolvedName = device.alias?.takeIf { it.isNotBlank() }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException reading device.alias", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "Exception reading device.alias", e)
+            }
+        }
+
+        // 2. Try device.name
+        if (resolvedName == null) {
+            try {
+                resolvedName = device.name?.takeIf { it.isNotBlank() }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException reading device.name", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "Exception reading device.name", e)
+            }
+        }
+
+        // 3. Try checking bonded devices from BluetoothManager / BluetoothAdapter
+        if (resolvedName == null || resolvedName.equals("Bluetooth Device", ignoreCase = true)) {
+            try {
+                val btManager = appContext?.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                val bonded = btManager?.adapter?.bondedDevices
+                val match = bonded?.firstOrNull { it.address == device.address }
+                if (match != null) {
+                    val bondedName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        try { match.alias } catch (e: SecurityException) { null }
+                            ?: try { match.name } catch (e: SecurityException) { null }
+                    } else {
+                        try { match.name } catch (e: SecurityException) { null }
+                    }
+                    if (!bondedName.isNullOrBlank()) {
+                        resolvedName = bondedName
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException reading bonded devices", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "Exception accessing BluetoothAdapter", e)
+            }
+        }
+
+        // 4. Check BluetoothClass for device type
+        val btClass = try {
+            device.bluetoothClass
+        } catch (e: Exception) {
+            null
+        }
+        val deviceClass = btClass?.deviceClass ?: 0
+        val isCarClass = deviceClass == BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO ||
+                         deviceClass == BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE
+        val isHeadphoneClass = deviceClass == BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES ||
+                               deviceClass == BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET ||
+                               deviceClass == BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER
+
+        val nameToCheck = resolvedName ?: ""
+        val isCar = isCarClass || isCarBluetooth(nameToCheck)
+        val isHeadphone = isHeadphoneClass || isHeadphoneBluetooth(nameToCheck)
+
+        // 5. Final friendly name formatting
+        val finalName = when {
+            !resolvedName.isNullOrBlank() && !resolvedName.equals("Bluetooth Device", ignoreCase = true) -> resolvedName
+            isCar -> if (totalDevices > 1) "Car Bluetooth (${index + 1})" else "Car Bluetooth"
+            isHeadphone -> if (totalDevices > 1) "Bluetooth Headset (${index + 1})" else "Bluetooth Headset"
+            totalDevices > 1 -> "Bluetooth Device ${index + 1}"
+            else -> "Bluetooth Device"
+        }
+
+        return BluetoothDeviceItem(
+            name = finalName,
+            address = device.address,
+            isCar = isCar,
+            isHeadphone = isHeadphone
+        )
+    }
+
+    fun selectBluetoothDevice(address: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val audioState = telecomService?.callAudioState
+            val targetDevice = audioState?.supportedBluetoothDevices?.firstOrNull { it.address == address }
+            if (targetDevice != null) {
+                telecomService?.requestBluetoothAudio(targetDevice)
+                _activeBluetoothDeviceAddress.value = address
+                _currentAudioRoute.value = CallAudioState.ROUTE_BLUETOOTH
+                return
+            }
+        }
+        val match = _availableBluetoothDevices.value.firstOrNull { it.address == address }
+        if (match != null) {
+            _activeBluetoothDeviceAddress.value = address
+            _bluetoothDeviceName.value = match.name
+            _currentAudioRoute.value = CallAudioState.ROUTE_BLUETOOTH
+        } else {
+            setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+        }
+    }
+
+    private fun isCarBluetooth(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("car") || lower.contains("vehicle") || lower.contains("auto") ||
+               lower.contains("handsfree") || lower.contains("uconnect") || lower.contains("sync") ||
+               lower.contains("bmw") || lower.contains("audi") || lower.contains("tesla") ||
+               lower.contains("mercedes") || lower.contains("toyota") || lower.contains("honda") ||
+               lower.contains("ford") || lower.contains("hyundai") || lower.contains("kia") ||
+               lower.contains("chevrolet") || lower.contains("nissan") || lower.contains("subaru") ||
+               lower.contains("mazda") || lower.contains("volvo") || lower.contains("porsche")
+    }
+
+    private fun isHeadphoneBluetooth(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("buds") || lower.contains("airpod") || lower.contains("headphone") ||
+               lower.contains("headset") || lower.contains("earphone") || lower.contains("wh-") ||
+               lower.contains("wf-") || lower.contains("bose") || lower.contains("sony") ||
+               lower.contains("beats") || lower.contains("jabra") || lower.contains("sennheiser") ||
+               lower.contains("pixel buds") || lower.contains("galaxy buds")
     }
 
     fun setAudioRoute(route: Int) {
         _currentAudioRoute.value = route
         _isSpeakerOn.value = (route == CallAudioState.ROUTE_SPEAKER)
+        if (route == CallAudioState.ROUTE_BLUETOOTH && _activeBluetoothDeviceAddress.value == null) {
+            val first = _availableBluetoothDevices.value.firstOrNull()
+            if (first != null) {
+                _activeBluetoothDeviceAddress.value = first.address
+                _bluetoothDeviceName.value = first.name
+            }
+        }
         telecomService?.setAudioRoute(route)
         appContext?.let { ctx ->
             _activeCall.value?.let { OngoingCallNotificationHelper.showCallNotification(ctx, it) }
@@ -726,10 +899,21 @@ object CallManager {
     fun startSimulatedIncomingCall(context: Context, number: String, name: String, reason: String? = null) {
         appContext = context.applicationContext
         automationJob?.cancel()
+        updateBluetoothDevicesForSimulation(context)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val communityInfo = if (lookedUp == null) com.example.util.CommunityCallerIdService.lookup(number) else null
-        val resolvedName = lookedUp?.name ?: communityInfo?.name ?: name
-        val photoUri = lookedUp?.photoUri
+        val favContact = try {
+            runBlocking {
+                val dao = AppDatabase.getInstance(context).appDao()
+                dao.getAllFavoritesList().firstOrNull {
+                    ContactHelper.isSamePhoneNumber(it.phoneNumber, number)
+                }
+            }
+        } catch (_: Exception) { null }
+        val communityInfo = if (lookedUp == null && favContact == null) com.example.util.CommunityCallerIdService.lookup(number) else null
+        val resolvedName = lookedUp?.name ?: favContact?.name ?: communityInfo?.name ?: name
+        val resolvedNickname = lookedUp?.nickname?.ifBlank { null } ?: favContact?.nickname?.ifBlank { null }
+        val resolvedLabel = lookedUp?.label?.ifBlank { null } ?: favContact?.label?.ifBlank { null } ?: "Mobile"
+        val photoUri = lookedUp?.photoUri ?: favContact?.photoUri
         val callInfo = ActiveCallInfo(
             id = "sim_${System.currentTimeMillis()}",
             phoneNumber = number,
@@ -740,7 +924,9 @@ object CallManager {
             isSimulated = true,
             photoUri = photoUri,
             callReason = reason ?: communityInfo?.defaultCallReason,
-            communityInfo = communityInfo
+            communityInfo = communityInfo,
+            nickname = resolvedNickname,
+            numberLabel = resolvedLabel
         )
         _activeCall.value = callInfo
         CallForegroundService.start(context)
@@ -751,17 +937,29 @@ object CallManager {
     fun startSimulatedOutgoingCall(context: Context, number: String, reason: String? = null) {
         appContext = context.applicationContext
         automationJob?.cancel()
+        updateBluetoothDevicesForSimulation(context)
         val isVoicemail = ContactHelper.isVoicemailNumber(context, number)
         val lookedUp = ContactHelper.lookupContactByNumber(context, number)
-        val communityInfo = if (lookedUp == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
+        val favContact = try {
+            runBlocking {
+                val dao = AppDatabase.getInstance(context).appDao()
+                dao.getAllFavoritesList().firstOrNull {
+                    ContactHelper.isSamePhoneNumber(it.phoneNumber, number)
+                }
+            }
+        } catch (_: Exception) { null }
+        val communityInfo = if (lookedUp == null && favContact == null && !isVoicemail) com.example.util.CommunityCallerIdService.lookup(number) else null
         val resolvedName = when {
             isVoicemail -> "Voicemail"
             lookedUp != null -> lookedUp.name
+            favContact != null -> favContact.name
             communityInfo != null -> communityInfo.name
             number.isNotBlank() -> number
             else -> "Outgoing Call"
         }
-        val photoUri = lookedUp?.photoUri
+        val resolvedNickname = lookedUp?.nickname?.ifBlank { null } ?: favContact?.nickname?.ifBlank { null }
+        val resolvedLabel = lookedUp?.label?.ifBlank { null } ?: favContact?.label?.ifBlank { null } ?: "Mobile"
+        val photoUri = lookedUp?.photoUri ?: favContact?.photoUri
         val callInfo = ActiveCallInfo(
             id = "sim_out_${System.currentTimeMillis()}",
             phoneNumber = number,
@@ -772,7 +970,9 @@ object CallManager {
             isSimulated = true,
             photoUri = photoUri,
             callReason = reason,
-            communityInfo = communityInfo
+            communityInfo = communityInfo,
+            nickname = resolvedNickname,
+            numberLabel = resolvedLabel
         )
         _activeCall.value = callInfo
         CallForegroundService.start(context)
@@ -791,6 +991,93 @@ object CallManager {
                 CallForegroundService.start(context)
                 OngoingCallNotificationHelper.showCallNotification(context, updated)
             }
+        }
+    }
+
+    fun updateBluetoothDevicesForSimulation(context: Context) {
+        appContext = context.applicationContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                // If permission is not granted, populate mock devices for simulated/testing experience!
+                _availableBluetoothDevices.value = listOf(
+                    BluetoothDeviceItem(
+                        name = "Tesla Model 3",
+                        address = "00:11:22:33:44:55",
+                        isCar = true,
+                        isHeadphone = false
+                    ),
+                    BluetoothDeviceItem(
+                        name = "Sony WH-1000XM4",
+                        address = "66:77:88:99:AA:BB",
+                        isCar = false,
+                        isHeadphone = true
+                    )
+                )
+                _supportedAudioRoutes.value = _supportedAudioRoutes.value or CallAudioState.ROUTE_BLUETOOTH
+                _bluetoothDeviceName.value = "Sony WH-1000XM4"
+                _activeBluetoothDeviceAddress.value = "66:77:88:99:AA:BB"
+                return
+            }
+        }
+
+        try {
+            val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            val adapter = btManager?.adapter
+            if (adapter != null && adapter.isEnabled) {
+                val bonded = adapter.bondedDevices
+                if (!bonded.isNullOrEmpty()) {
+                    val btList = bonded.mapIndexed { index, device ->
+                        resolveBluetoothDevice(device, index, bonded.size)
+                    }
+                    _availableBluetoothDevices.value = btList
+                    _supportedAudioRoutes.value = _supportedAudioRoutes.value or CallAudioState.ROUTE_BLUETOOTH
+                    if (_activeBluetoothDeviceAddress.value == null) {
+                        val first = btList.first()
+                        _activeBluetoothDeviceAddress.value = first.address
+                        _bluetoothDeviceName.value = first.name
+                    }
+                } else {
+                    // No bonded devices, populate mock devices for rich visual feedback and testing!
+                    _availableBluetoothDevices.value = listOf(
+                        BluetoothDeviceItem(
+                            name = "Tesla Model 3",
+                            address = "00:11:22:33:44:55",
+                            isCar = true,
+                            isHeadphone = false
+                        ),
+                        BluetoothDeviceItem(
+                            name = "Sony WH-1000XM4",
+                            address = "66:77:88:99:AA:BB",
+                            isCar = false,
+                            isHeadphone = true
+                        )
+                    )
+                    _supportedAudioRoutes.value = _supportedAudioRoutes.value or CallAudioState.ROUTE_BLUETOOTH
+                    _bluetoothDeviceName.value = "Sony WH-1000XM4"
+                    _activeBluetoothDeviceAddress.value = "66:77:88:99:AA:BB"
+                }
+            } else {
+                // Adapter not enabled or null, populate mock devices for simulation
+                _availableBluetoothDevices.value = listOf(
+                    BluetoothDeviceItem(
+                        name = "Tesla Model 3",
+                        address = "00:11:22:33:44:55",
+                        isCar = true,
+                        isHeadphone = false
+                    ),
+                    BluetoothDeviceItem(
+                        name = "Sony WH-1000XM4",
+                        address = "66:77:88:99:AA:BB",
+                        isCar = false,
+                        isHeadphone = true
+                    )
+                )
+                _supportedAudioRoutes.value = _supportedAudioRoutes.value or CallAudioState.ROUTE_BLUETOOTH
+                _bluetoothDeviceName.value = "Sony WH-1000XM4"
+                _activeBluetoothDeviceAddress.value = "66:77:88:99:AA:BB"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update bluetooth devices from system", e)
         }
     }
 

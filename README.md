@@ -3,6 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-11%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-blue.svg)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Material_3-purple.svg)](https://developer.android.com/jetpack/compose)
+[![Changelog](https://img.shields.io/badge/Changelog-Running_Log-orange.svg)](CHANGELOG.md)
 [![Architecture & Design](https://img.shields.io/badge/Architecture-Design_Doc-teal.svg)](DESIGN.md)
 
 **OmniDial** is an intelligent, feature-rich native Android Telecom phone dialer designed for modern Android devices. Built with **Jetpack Compose (Material 3)**, **Kotlin Coroutines/StateFlow**, and Android's native **Telecom `InCallService`**, it combines T9 smart search, horizontal panel swipe navigation, automated call screening/gate buzzer rules, persistent drag-and-drop VIP favorite grid reordering, SIM slot badges, dedicated spam protection, and dual-SIM management into a fast, private, dark-mode-first experience.

@@ -75,6 +75,8 @@ object BackupManager {
         prefsObj.put("call_answer_style", prefs.getString("call_answer_style", "swipe_slider"))
         prefsObj.put("favorite_card_style", prefs.getString("favorite_card_style", "bento"))
         prefsObj.put("confirm_fav_calls", prefs.getBoolean("confirm_fav_calls", true))
+        prefsObj.put("confirm_speed_dial_call", prefs.getBoolean("confirm_speed_dial_call", true))
+        prefsObj.put("ask_assign_unassigned_speed_dial", prefs.getBoolean("ask_assign_unassigned_speed_dial", true))
         prefsObj.put("default_start_tab", prefs.getInt("default_start_tab", 0))
         prefsObj.put("swipe_to_switch_panels", prefs.getBoolean("swipe_to_switch_panels", true))
 
@@ -233,6 +235,8 @@ object BackupManager {
                 if (prefsObj.has("call_answer_style")) editor.putString("call_answer_style", prefsObj.getString("call_answer_style"))
                 if (prefsObj.has("favorite_card_style")) editor.putString("favorite_card_style", prefsObj.getString("favorite_card_style"))
                 if (prefsObj.has("confirm_fav_calls")) editor.putBoolean("confirm_fav_calls", prefsObj.getBoolean("confirm_fav_calls"))
+                if (prefsObj.has("confirm_speed_dial_call")) editor.putBoolean("confirm_speed_dial_call", prefsObj.getBoolean("confirm_speed_dial_call"))
+                if (prefsObj.has("ask_assign_unassigned_speed_dial")) editor.putBoolean("ask_assign_unassigned_speed_dial", prefsObj.getBoolean("ask_assign_unassigned_speed_dial"))
                 if (prefsObj.has("default_start_tab")) editor.putInt("default_start_tab", prefsObj.getInt("default_start_tab"))
                 if (prefsObj.has("swipe_to_switch_panels")) editor.putBoolean("swipe_to_switch_panels", prefsObj.getBoolean("swipe_to_switch_panels"))
 

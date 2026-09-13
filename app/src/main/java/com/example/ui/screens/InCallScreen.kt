@@ -60,8 +60,11 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -98,6 +101,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -144,7 +148,10 @@ fun InCallScreen(
     audioRoute: Int = CallAudioState.ROUTE_EARPIECE,
     supportedAudioRoutes: Int = CallAudioState.ROUTE_EARPIECE or CallAudioState.ROUTE_SPEAKER,
     bluetoothDeviceName: String? = null,
+    availableBluetoothDevices: List<com.example.telecom.BluetoothDeviceItem> = emptyList(),
+    activeBluetoothDeviceAddress: String? = null,
     onSelectAudioRoute: (Int) -> Unit = {},
+    onSelectBluetoothDevice: (String) -> Unit = {},
     onPlayDtmf: (Char) -> Unit,
     onStopDtmf: (Char) -> Unit,
     onDeclineWithSms: (String) -> Unit = {},
@@ -335,20 +342,70 @@ fun InCallScreen(
                     }
                 }
 
-                // Caller Name & Number
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Caller Name, Nickname, Label & Number
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
                     Text(
                         text = callInfo.displayName,
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = callInfo.phoneNumber,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                    // Nickname badge if available and distinct from displayName
+                    if (!callInfo.nickname.isNullOrBlank() && !callInfo.nickname.equals(callInfo.displayName, ignoreCase = true)) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Nickname",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "\"${callInfo.nickname}\"",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+
+                    // Label and Number
+                    val numberSubtitle = buildString {
+                        if (!callInfo.numberLabel.isNullOrBlank()) {
+                            append(callInfo.numberLabel)
+                            if (callInfo.phoneNumber.isNotBlank()) {
+                                append(" • ")
+                            }
+                        }
+                        if (callInfo.phoneNumber.isNotBlank()) {
+                            append(callInfo.phoneNumber)
+                        }
+                    }
+
+                    if (numberSubtitle.isNotBlank()) {
+                        Text(
+                            text = numberSubtitle,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
 
                     // Contextual Caller ID ("Call Reason")
                     if (!callInfo.callReason.isNullOrBlank()) {
@@ -530,57 +587,48 @@ fun InCallScreen(
             // Bottom Section: Audio controls & Call End/Answer buttons
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                // Secondary Controls Row: Mute, Keypad, Speaker
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Mute
-                    InCallControlButton(
-                        icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        label = if (isMuted) "Unmute" else "Mute",
-                        isActive = isMuted,
-                        onClick = onToggleMute,
-                        testTag = "incall_mute_button"
-                    )
-
-                    // Keypad
-                    InCallControlButton(
-                        icon = Icons.Default.Dialpad,
-                        label = if (showKeypad) "Hide Keypad" else "Keypad",
-                        isActive = showKeypad,
-                        onClick = onToggleKeypad,
-                        testTag = "incall_keypad_button"
-                    )
-
-                    // Audio Route (Speaker / Handset / Bluetooth)
-                    val audioIcon = when (audioRoute) {
-                        CallAudioState.ROUTE_BLUETOOTH -> Icons.Default.BluetoothAudio
-                        CallAudioState.ROUTE_SPEAKER -> Icons.AutoMirrored.Filled.VolumeUp
-                        else -> Icons.Default.PhoneAndroid
-                    }
-                    val audioLabel = when (audioRoute) {
-                        CallAudioState.ROUTE_BLUETOOTH -> bluetoothDeviceName?.take(9) ?: "Bluetooth"
-                        CallAudioState.ROUTE_SPEAKER -> "Speaker"
-                        else -> "Handset"
-                    }
-                    InCallControlButton(
-                        icon = audioIcon,
-                        label = audioLabel,
-                        isActive = audioRoute == CallAudioState.ROUTE_SPEAKER || audioRoute == CallAudioState.ROUTE_BLUETOOTH,
-                        onClick = {
-                            showAudioRouteSelector = true
-                        },
-                        testTag = "incall_speaker_button"
-                    )
-                }
-
-                // Primary Call Actions
                 if (callInfo.state == Call.STATE_RINGING) {
+                    // Incoming Call: Explicit Audio Route Selection (No Mute / Keypad before answering)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Audio Output",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        // Explicit Audio Route Options (Handset, Speaker, Car Bluetooth, Bluetooth Headset, etc.)
+                        ExplicitAudioRoutesBar(
+                            currentRoute = audioRoute,
+                            supportedRoutes = supportedAudioRoutes,
+                            bluetoothDeviceName = bluetoothDeviceName,
+                            availableBluetoothDevices = availableBluetoothDevices,
+                            activeBluetoothDeviceAddress = activeBluetoothDeviceAddress,
+                            onSelectRoute = onSelectAudioRoute,
+                            onSelectBluetoothDevice = onSelectBluetoothDevice
+                        )
+                    }
+
                     // Quick-Decline SMS Chips
                     Column(
                         modifier = Modifier
@@ -650,21 +698,24 @@ fun InCallScreen(
                         }
                     }
                 } else if (callInfo.state == Call.STATE_DISCONNECTED) {
-                    // Post-Call Follow-up Card
+                    // Post-Call Follow-up Card (Beautifully styled)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)
                             .testTag("post_call_card"),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
                         Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            // Header Row
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -672,32 +723,69 @@ fun InCallScreen(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.NoteAdd,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = if (noteSaved) "Note & Reminder Saved!" else "Add Post-Call Note / Reminder",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (noteSaved) Color(0xFF16A34A).copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (noteSaved) Icons.Default.CheckCircle else Icons.Default.NoteAdd,
+                                                contentDescription = null,
+                                                tint = if (noteSaved) Color(0xFF16A34A) else MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Column {
+                                        Text(
+                                            text = if (noteSaved) "Note & Reminder Saved!" else "Post-Call Note & Reminder",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (!noteSaved) {
+                                            Text(
+                                                text = "Capture details while fresh in mind",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
 
                                 if (!noteSaved && !isUserInteractingWithNote) {
-                                    Text(
-                                        text = "Closing in ${autoCloseRemainingSeconds}s",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            CircularProgressIndicator(
+                                                progress = { autoCloseRemainingSeconds / 10f },
+                                                modifier = Modifier.size(10.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "${autoCloseRemainingSeconds}s",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
                             if (!noteSaved) {
+                                // Text Input Field
                                 OutlinedTextField(
                                     value = postCallNote,
                                     onValueChange = {
@@ -706,8 +794,8 @@ fun InCallScreen(
                                     },
                                     placeholder = {
                                         Text(
-                                            "Call notes & reminders...",
-                                            fontSize = 12.sp,
+                                            "e.g., Send proposal by tomorrow, follow up on pricing...",
+                                            fontSize = 13.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                         )
                                     },
@@ -719,38 +807,72 @@ fun InCallScreen(
                                             }
                                         }
                                         .testTag("post_call_note_input"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
                                     singleLine = false,
                                     maxLines = 3
                                 )
 
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    listOf(15L to "In 15m", 60L to "In 1h", 1440L to "Tomorrow").forEach { (mins, label) ->
-                                        AssistChip(
-                                            onClick = {
-                                                postCallReminderMins = if (postCallReminderMins == mins) null else mins
-                                                isUserInteractingWithNote = true
-                                            },
-                                            label = { Text(label, fontSize = 11.sp) },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = Icons.Default.NotificationsActive,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                            },
-                                            colors = AssistChipDefaults.assistChipColors(
-                                                containerColor = if (postCallReminderMins == mins) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                                labelColor = if (postCallReminderMins == mins) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                            )
-                                        )
+                                // Reminder Chips Section
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = "Set Reminder:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        listOf(15L to "In 15m", 60L to "In 1h", 1440L to "Tomorrow 9am").forEach { (mins, label) ->
+                                            val isSelected = (postCallReminderMins == mins)
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                                ),
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        postCallReminderMins = if (isSelected) null else mins
+                                                        isUserInteractingWithNote = true
+                                                    }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.NotificationsActive,
+                                                        contentDescription = null,
+                                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
+                                // Action Buttons Row
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -763,8 +885,9 @@ fun InCallScreen(
                                         }
                                     ) {
                                         Text(
-                                            text = if (isUserInteractingWithNote) "Discard / Close" else "Skip",
-                                            fontSize = 12.sp,
+                                            text = if (isUserInteractingWithNote) "Discard" else "Skip",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -774,16 +897,70 @@ fun InCallScreen(
                                             noteSaved = true
                                             onSavePostCallNote?.invoke(postCallNote, postCallReminderMins)
                                         },
+                                        shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.testTag("save_post_call_note_btn")
                                     ) {
-                                        Text("Save & Close", fontSize = 12.sp)
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Save & Close", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    // Active or Outgoing Call: End Call (Red)
+                    // Active or Outgoing Call:
+                    // 1. Controls Row: Mute, Keypad
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Mute
+                        InCallControlButton(
+                            icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                            label = if (isMuted) "Unmute" else "Mute",
+                            isActive = isMuted,
+                            onClick = onToggleMute,
+                            testTag = "incall_mute_button"
+                        )
+
+                        // Keypad
+                        InCallControlButton(
+                            icon = Icons.Default.Dialpad,
+                            label = if (showKeypad) "Hide Keypad" else "Keypad",
+                            isActive = showKeypad,
+                            onClick = onToggleKeypad,
+                            testTag = "incall_keypad_button"
+                        )
+                    }
+
+                    // 2. Explicit Audio Routes Bar (Direct one-tap switching)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ExplicitAudioRoutesBar(
+                            currentRoute = audioRoute,
+                            supportedRoutes = supportedAudioRoutes,
+                            bluetoothDeviceName = bluetoothDeviceName,
+                            availableBluetoothDevices = availableBluetoothDevices,
+                            activeBluetoothDeviceAddress = activeBluetoothDeviceAddress,
+                            onSelectRoute = onSelectAudioRoute,
+                            onSelectBluetoothDevice = onSelectBluetoothDevice
+                        )
+                    }
+
+                    // 3. End Call Button (Red)
                     FilledIconButton(
                         onClick = onDisconnect,
                         modifier = Modifier
@@ -804,18 +981,215 @@ fun InCallScreen(
             }
         }
     }
+}
 
-    if (showAudioRouteSelector) {
-        com.example.ui.components.AudioOutputSelectorDialog(
-            currentRoute = audioRoute,
-            supportedRoutes = supportedAudioRoutes,
-            bluetoothDeviceName = bluetoothDeviceName,
-            onSelectRoute = { route ->
-                onSelectAudioRoute(route)
-                showAudioRouteSelector = false
-            },
-            onDismiss = { showAudioRouteSelector = false }
+@Composable
+fun ExplicitAudioRoutesBar(
+    currentRoute: Int,
+    supportedRoutes: Int,
+    bluetoothDeviceName: String?,
+    availableBluetoothDevices: List<com.example.telecom.BluetoothDeviceItem>,
+    activeBluetoothDeviceAddress: String?,
+    onSelectRoute: (Int) -> Unit,
+    onSelectBluetoothDevice: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    data class DisplayRoute(
+        val key: String,
+        val label: String,
+        val subLabel: String,
+        val icon: androidx.compose.ui.graphics.vector.ImageVector,
+        val isActive: Boolean,
+        val onClick: () -> Unit
+    )
+
+    val items = mutableListOf<DisplayRoute>()
+
+    // 1. Phone / Handset (Earpiece)
+    val isEarpieceActive = (currentRoute == CallAudioState.ROUTE_EARPIECE)
+    items.add(
+        DisplayRoute(
+            key = "earpiece",
+            label = "Handset",
+            subLabel = "Earpiece",
+            icon = Icons.Default.PhoneAndroid,
+            isActive = isEarpieceActive,
+            onClick = { onSelectRoute(CallAudioState.ROUTE_EARPIECE) }
         )
+    )
+
+    // 2. Speakerphone
+    val isSpeakerActive = (currentRoute == CallAudioState.ROUTE_SPEAKER)
+    items.add(
+        DisplayRoute(
+            key = "speaker",
+            label = "Speaker",
+            subLabel = "Loudspeaker",
+            icon = Icons.AutoMirrored.Filled.VolumeUp,
+            isActive = isSpeakerActive,
+            onClick = { onSelectRoute(CallAudioState.ROUTE_SPEAKER) }
+        )
+    )
+
+    // 3. Bluetooth devices (all connected devices listed individually with specific icons)
+    if (availableBluetoothDevices.isNotEmpty()) {
+        availableBluetoothDevices.forEach { dev ->
+            val isDevActive = currentRoute == CallAudioState.ROUTE_BLUETOOTH &&
+                    (activeBluetoothDeviceAddress == null || activeBluetoothDeviceAddress == dev.address || availableBluetoothDevices.size == 1)
+            val icon = when {
+                dev.isCar -> Icons.Default.DirectionsCar
+                dev.isHeadphone -> Icons.Default.Headphones
+                else -> Icons.Default.BluetoothAudio
+            }
+            val subLabel = when {
+                dev.isCar -> "Car Audio"
+                dev.isHeadphone -> "Headphones"
+                else -> "Bluetooth"
+            }
+            items.add(
+                DisplayRoute(
+                    key = "bt_${dev.address}",
+                    label = dev.name,
+                    subLabel = subLabel,
+                    icon = icon,
+                    isActive = isDevActive,
+                    onClick = { onSelectBluetoothDevice(dev.address) }
+                )
+            )
+        }
+    } else if ((supportedRoutes and CallAudioState.ROUTE_BLUETOOTH) != 0 || bluetoothDeviceName != null) {
+        val isBtActive = (currentRoute == CallAudioState.ROUTE_BLUETOOTH)
+        val name = bluetoothDeviceName ?: "Bluetooth Device"
+        val isCar = name.lowercase().contains("car") || name.lowercase().contains("vehicle") || name.lowercase().contains("handsfree")
+        val isHeadphone = name.lowercase().contains("buds") || name.lowercase().contains("pod") || name.lowercase().contains("head")
+        val icon = when {
+            isCar -> Icons.Default.DirectionsCar
+            isHeadphone -> Icons.Default.Headphones
+            else -> Icons.Default.BluetoothAudio
+        }
+        val subLabel = when {
+            isCar -> "Car Audio"
+            isHeadphone -> "Headphones"
+            else -> "Bluetooth"
+        }
+        items.add(
+            DisplayRoute(
+                key = "bluetooth",
+                label = name,
+                subLabel = subLabel,
+                icon = icon,
+                isActive = isBtActive,
+                onClick = { onSelectRoute(CallAudioState.ROUTE_BLUETOOTH) }
+            )
+        )
+    }
+
+    // 4. Wired Headset (if connected)
+    if ((supportedRoutes and CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
+        val isWiredActive = (currentRoute == CallAudioState.ROUTE_WIRED_HEADSET)
+        items.add(
+            DisplayRoute(
+                key = "wired",
+                label = "Headset",
+                subLabel = "Wired",
+                icon = Icons.Default.Headphones,
+                isActive = isWiredActive,
+                onClick = { onSelectRoute(CallAudioState.ROUTE_WIRED_HEADSET) }
+            )
+        )
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items.forEach { route ->
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (route.isActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                },
+                border = if (route.isActive) {
+                    BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                } else {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                },
+                shadowElevation = if (route.isActive) 3.dp else 0.dp,
+                modifier = Modifier
+                    .clickable(onClick = route.onClick)
+                    .testTag("audio_route_${route.key}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Icon Container
+                    Surface(
+                        shape = CircleShape,
+                        color = if (route.isActive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = route.icon,
+                                contentDescription = route.label,
+                                tint = if (route.isActive) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Text Info
+                    Column {
+                        Text(
+                            text = route.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (route.isActive) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (route.isActive) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            maxLines = 1
+                        )
+                        Text(
+                            text = route.subLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = if (route.isActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            }
+                        )
+                    }
+
+                    if (route.isActive) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Active",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

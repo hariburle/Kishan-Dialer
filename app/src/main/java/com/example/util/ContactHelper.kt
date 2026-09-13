@@ -489,6 +489,31 @@ object ContactHelper {
     }
 
     /**
+     * Identifies the uppercase country ISO (e.g. "US", "IN", "GB") for a phone number based on its international prefix.
+     */
+    fun getCountryIsoForNumber(phoneNumber: String): String? {
+        val code = extractCountryCallingCode(phoneNumber) ?: return null
+        return countryCallingCodes.entries.firstOrNull { it.value == code }?.key?.uppercase()
+    }
+
+    /**
+     * Returns a human-friendly label for a contact's phone number, adding a country tag to disambiguate.
+     */
+    fun getDescriptiveNumberLabel(contact: DeviceContact?, phoneNumber: String): String {
+        val matchedPhone = contact?.phoneNumbers?.firstOrNull {
+            isSamePhoneNumber(it.number, phoneNumber)
+        }
+        val rawLabel = matchedPhone?.label?.ifBlank { null } ?: contact?.label?.ifBlank { null } ?: "Mobile"
+
+        val countryIso = getCountryIsoForNumber(phoneNumber)
+        return if (countryIso != null && !rawLabel.contains(countryIso, ignoreCase = true)) {
+            "$rawLabel • $countryIso"
+        } else {
+            rawLabel
+        }
+    }
+
+    /**
      * Intelligently checks if a phone number is international relative to the device's physical location:
      * - If physically in India (calling code 91), a +91 number is NOT international.
      * - If physically in USA (calling code 1), a +91 number IS international, but a +1 number is NOT.
@@ -560,8 +585,74 @@ object ContactHelper {
     }
 
     /**
+     * Extracts international calling code (e.g. "91" for India, "1" for USA) from a phone number if present.
+     */
+    fun extractCountryCallingCode(phoneNumber: String): String? {
+        val clean = phoneNumber.replace(Regex("[^0-9+]"), "")
+        if (clean.isBlank()) return null
+        val digits = when {
+            clean.startsWith("+") -> clean.removePrefix("+")
+            clean.startsWith("00") -> clean.removePrefix("00")
+            clean.startsWith("011") -> clean.removePrefix("011")
+            else -> return null
+        }
+        val sortedCodes = countryCallingCodes.values.distinct().sortedByDescending { it.length }
+        for (code in sortedCodes) {
+            if (digits.startsWith(code) && digits.length > code.length) {
+                return code
+            }
+        }
+        return null
+    }
+
+    /**
+     * Safely determines if two phone numbers refer to the exact same telephone line.
+     * Critically ensures that numbers from different countries (e.g. +1 US vs +91 India)
+     * are NEVER considered the same number, even if they share the same suffix digits.
+     */
+    fun isSamePhoneNumber(num1: String?, num2: String?, context: Context? = null): Boolean {
+        if (num1.isNullOrBlank() || num2.isNullOrBlank()) return false
+        val s1 = num1.trim()
+        val s2 = num2.trim()
+        if (s1.equals(s2, ignoreCase = true)) return true
+
+        val clean1 = s1.replace(Regex("[^0-9+]"), "")
+        val clean2 = s2.replace(Regex("[^0-9+]"), "")
+        if (clean1.isEmpty() || clean2.isEmpty()) return false
+        if (clean1 == clean2) return true
+
+        val country1 = extractCountryCallingCode(clean1)
+        val country2 = extractCountryCallingCode(clean2)
+
+        // If BOTH numbers specify country codes and they differ (+1 vs +91), they are NEVER the same!
+        if (country1 != null && country2 != null && country1 != country2) {
+            return false
+        }
+
+        // Check local / national digits
+        val local1 = normalizeToLocalDigits(clean1)
+        val local2 = normalizeToLocalDigits(clean2)
+
+        if (local1.isNotEmpty() && local1 == local2 && local1.length >= 7) {
+            return true
+        }
+
+        // Suffix match only if country codes are not conflicting and suffix is at least 10 digits
+        if (country1 == null && country2 == null) {
+            val d1 = clean1.filter { it.isDigit() }
+            val d2 = clean2.filter { it.isDigit() }
+            if (d1.length >= 10 && d2.length >= 10 && d1.takeLast(10) == d2.takeLast(10)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
      * Matches a contact phone number against a user search query, allowing searches without
-     * international dial codes (+91, +1, etc.) to match contacts saved with international dial codes.
+     * international dial codes (+91, +1, etc.) to match contacts saved with international dial codes,
+     * while strictly isolating numbers from different countries (+1 vs +91).
      */
     fun matchesNumberQuery(contactNumber: String, searchQuery: String): Boolean {
         if (searchQuery.isBlank()) return true
@@ -569,22 +660,33 @@ object ContactHelper {
         val queryDigits = queryTrimmed.filter { it.isDigit() }
         val contactDigits = contactNumber.filter { it.isDigit() }
 
-        if (queryDigits.isNotEmpty()) {
-            // Direct digit substring match (e.g. "98765" in "919876543210")
-            if (contactDigits.contains(queryDigits)) return true
+        if (queryDigits.isEmpty()) {
+            return contactNumber.contains(queryTrimmed, ignoreCase = true)
+        }
 
-            // Local digits match (stripped of international code)
-            val contactLocal = normalizeToLocalDigits(contactNumber)
-            if (contactLocal.contains(queryDigits)) return true
+        // Prevent cross-country matches (e.g. +1 US contact matching +91 India query or vice versa)
+        val countryContact = extractCountryCallingCode(contactNumber)
+        val countryQuery = extractCountryCallingCode(searchQuery)
+        if (countryContact != null && countryQuery != null && countryContact != countryQuery) {
+            return false
+        }
 
-            val queryLocal = normalizeToLocalDigits(searchQuery)
-            if (queryLocal.isNotEmpty() && contactDigits.contains(queryLocal)) return true
-            if (queryLocal.isNotEmpty() && contactLocal.contains(queryLocal)) return true
+        if (isSamePhoneNumber(contactNumber, searchQuery)) return true
 
-            // Last 10-digit suffix match (standard mobile phone numbers)
-            if (contactDigits.length >= 10 && queryDigits.length >= 7) {
-                if (contactDigits.takeLast(10).contains(queryDigits.takeLast(10))) return true
-            }
+        // Direct digit substring match (e.g. "98765" in "919876543210")
+        if (contactDigits.contains(queryDigits)) return true
+
+        // Local digits match (stripped of international code)
+        val contactLocal = normalizeToLocalDigits(contactNumber)
+        if (contactLocal.contains(queryDigits)) return true
+
+        val queryLocal = normalizeToLocalDigits(searchQuery)
+        if (queryLocal.isNotEmpty() && contactDigits.contains(queryLocal)) return true
+        if (queryLocal.isNotEmpty() && contactLocal.contains(queryLocal)) return true
+
+        // Last 10-digit suffix match (only if neither or same country)
+        if (contactDigits.length >= 10 && queryDigits.length >= 10) {
+            if (contactDigits.takeLast(10) == queryDigits.takeLast(10)) return true
         }
 
         return contactNumber.contains(queryTrimmed, ignoreCase = true)
@@ -725,7 +827,8 @@ object ContactHelper {
                 ContactsContract.PhoneLookup.NUMBER,
                 ContactsContract.PhoneLookup.PHOTO_URI,
                 ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
-                ContactsContract.PhoneLookup.TYPE
+                ContactsContract.PhoneLookup.TYPE,
+                ContactsContract.PhoneLookup.LABEL
             )
             cursor = context.contentResolver.query(uri, projection, null, null, null)
             if (cursor != null && cursor.moveToFirst()) {
@@ -735,6 +838,7 @@ object ContactHelper {
                 val photoIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_URI)
                 val thumbIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI)
                 val typeIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.TYPE)
+                val labelIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.LABEL)
 
                 val contactId = if (idIdx != -1) cursor.getLong(idIdx) else null
                 val fullName = if (nameIdx != -1) cursor.getString(nameIdx) ?: phoneNumber else phoneNumber
@@ -743,20 +847,78 @@ object ContactHelper {
                 val photo = if (photoIdx != -1) cursor.getString(photoIdx) else null
                 val thumb = if (thumbIdx != -1) cursor.getString(thumbIdx) else null
                 val type = if (typeIdx != -1) cursor.getInt(typeIdx) else ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
+                val customLabel = if (labelIdx != -1) cursor.getString(labelIdx) else null
 
                 val label = when (type) {
                     ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Home"
                     ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Work"
-                    else -> "Mobile"
+                    ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> "Mobile"
+                    ContactsContract.CommonDataKinds.Phone.TYPE_MAIN -> "Main"
+                    ContactsContract.CommonDataKinds.Phone.TYPE_WORK_MOBILE -> "Work Mobile"
+                    ContactsContract.CommonDataKinds.Phone.TYPE_OTHER -> "Other"
+                    ContactsContract.CommonDataKinds.Phone.TYPE_CUSTOM -> customLabel?.ifBlank { "Custom" } ?: "Custom"
+                    else -> ContactsContract.CommonDataKinds.Phone.getTypeLabel(context.resources, type, customLabel)?.toString()?.ifBlank { "Mobile" } ?: "Mobile"
+                }
+
+                // Query all phone numbers for this contact to identify the specific number & label that matched the incoming call
+                val phoneNumbers = mutableListOf<ContactPhoneNumber>()
+                var matchedSpecificNumber = phoneNumber
+                var matchedSpecificLabel = label
+                if (contactId != null) {
+                    try {
+                        val pUri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                        val pProj = arrayOf(
+                            ContactsContract.CommonDataKinds.Phone.NUMBER,
+                            ContactsContract.CommonDataKinds.Phone.TYPE,
+                            ContactsContract.CommonDataKinds.Phone.LABEL
+                        )
+                        context.contentResolver.query(
+                            pUri,
+                            pProj,
+                            "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                            arrayOf(contactId.toString()),
+                            null
+                        )?.use { pCursor ->
+                            val pNumIdx = pCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                            val pTypeIdx = pCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.TYPE)
+                            val pLabelIdx = pCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.LABEL)
+                            while (pCursor.moveToNext()) {
+                                val pn = if (pNumIdx != -1) pCursor.getString(pNumIdx) ?: "" else ""
+                                val pt = if (pTypeIdx != -1) pCursor.getInt(pTypeIdx) else ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE
+                                val pl = if (pLabelIdx != -1) pCursor.getString(pLabelIdx) else null
+                                val itemLabel = when (pt) {
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Home"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Work"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> "Mobile"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_MAIN -> "Main"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_WORK_MOBILE -> "Work Mobile"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_OTHER -> "Other"
+                                    ContactsContract.CommonDataKinds.Phone.TYPE_CUSTOM -> pl?.ifBlank { "Custom" } ?: "Custom"
+                                    else -> ContactsContract.CommonDataKinds.Phone.getTypeLabel(context.resources, pt, pl)?.toString()?.ifBlank { "Mobile" } ?: "Mobile"
+                                }
+                                if (pn.isNotBlank()) {
+                                    phoneNumbers.add(ContactPhoneNumber(pn, itemLabel))
+                                    if (isSamePhoneNumber(pn, phoneNumber)) {
+                                        matchedSpecificNumber = pn
+                                        matchedSpecificLabel = itemLabel
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (phoneNumbers.isEmpty()) {
+                    phoneNumbers.add(ContactPhoneNumber(matchedSpecificNumber, matchedSpecificLabel))
                 }
 
                 DeviceContact(
                     name = fullName,
-                    phoneNumber = num,
-                    label = label,
+                    phoneNumber = matchedSpecificNumber,
+                    label = matchedSpecificLabel,
                     photoUri = photo ?: thumb,
                     contactId = contactId,
-                    nickname = nickname
+                    nickname = nickname,
+                    phoneNumbers = phoneNumbers
                 )
             } else null
         } catch (e: SecurityException) {

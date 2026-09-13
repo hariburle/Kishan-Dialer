@@ -136,6 +136,8 @@ fun DialerScreen(
     onAssignSpeedDial: (FavoriteContact, Int) -> Unit = { _, _ -> },
     onAssignSpeedDialSlot: (Int, String, String, String?) -> Unit = { _, _, _, _ -> },
     onClearSpeedDialSlot: (Int) -> Unit = {},
+    confirmSpeedDialCall: Boolean = true,
+    askToAssignUnassignedSpeedDial: Boolean = true,
     deviceContacts: List<DeviceContact> = emptyList(),
     getPreferredCallingMode: (String) -> String = { "cellular" },
     learnedCallModes: Map<String, String> = emptyMap(),
@@ -145,6 +147,7 @@ fun DialerScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showAddFavoriteDialog by remember { mutableStateOf(false) }
     var assignSpeedDialSlotTarget by remember { mutableStateOf<Int?>(null) }
+    var promptAssignSlotTarget by remember { mutableStateOf<Int?>(null) }
     var speedDialActionSlotTarget by remember { mutableStateOf<Pair<Int, FavoriteContact>?>(null) }
     var matchedContact by remember { mutableStateOf<DeviceContact?>(null) }
     val effectiveContacts = deviceContacts
@@ -715,10 +718,20 @@ fun DialerScreen(
                             val slotNum = digit.digitToInt()
                             val fav = favorites.firstOrNull { it.speedDialSlot == slotNum }
                             if (fav != null) {
-                                speedDialActionSlotTarget = Pair(slotNum, fav)
+                                if (confirmSpeedDialCall) {
+                                    speedDialActionSlotTarget = Pair(slotNum, fav)
+                                } else {
+                                    val targetNum = fav.phoneNumber
+                                    speedDialToast = "Calling ${fav.name} (#$slotNum)..."
+                                    onSelectContactNumber(targetNum)
+                                    onPlaceCall(targetNum, null)
+                                }
                             } else {
-                                speedDialToast = "Assign contact to #$slotNum"
-                                assignSpeedDialSlotTarget = slotNum
+                                if (askToAssignUnassignedSpeedDial) {
+                                    promptAssignSlotTarget = slotNum
+                                } else {
+                                    speedDialToast = "Speed dial #$slotNum is unassigned"
+                                }
                             }
                         }
                     }
@@ -1107,50 +1120,215 @@ fun DialerScreen(
         AlertDialog(
             onDismissRequest = { speedDialActionSlotTarget = null },
             title = {
-                Text("Speed Dial #$slot: ${fav.name}")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "#$slot",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = fav.name,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = "Speed Dial Shortcut",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             },
             text = {
-                Text("${fav.phoneNumber} (${fav.label})")
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                text = fav.phoneNumber,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (fav.label.isNotBlank()) {
+                                Text(
+                                    text = fav.label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Prominent Call Button
+                    Button(
+                        onClick = {
+                            val targetNum = fav.phoneNumber
+                            speedDialActionSlotTarget = null
+                            onSelectContactNumber(targetNum)
+                            onPlaceCall(targetNum, null)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF059669),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("speed_dial_call_button")
+                    ) {
+                        Icon(
+                            Icons.Filled.Call,
+                            contentDescription = "Call",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Call ${fav.name.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: fav.name}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val targetNum = fav.phoneNumber
-                        speedDialActionSlotTarget = null
-                        onSelectContactNumber(targetNum)
-                        onPlaceCall(targetNum, null)
-                    }
+                // Secondary options formatted as clean text links (do not look like buttons)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Call")
+                    Text(
+                        text = "Reassign",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .testTag("speed_dial_reassign_action")
+                            .clickable {
+                                val targetSlot = slot
+                                speedDialActionSlotTarget = null
+                                assignSpeedDialSlotTarget = targetSlot
+                            }
+                            .padding(vertical = 8.dp, horizontal = 6.dp)
+                    )
+                    Text(
+                        text = "Clear",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .testTag("speed_dial_clear_action")
+                            .clickable {
+                                val targetSlot = slot
+                                speedDialActionSlotTarget = null
+                                onClearSpeedDialSlot(targetSlot)
+                                speedDialToast = "Cleared Speed Dial #$targetSlot"
+                            }
+                            .padding(vertical = 8.dp, horizontal = 6.dp)
+                    )
+                    Text(
+                        text = "Cancel",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Normal,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .testTag("speed_dial_cancel_action")
+                            .clickable {
+                                speedDialActionSlotTarget = null
+                            }
+                            .padding(vertical = 8.dp, horizontal = 6.dp)
+                    )
+                }
+            }
+        )
+    }
+
+    if (promptAssignSlotTarget != null) {
+        val slot = promptAssignSlotTarget!!
+        AlertDialog(
+            onDismissRequest = { promptAssignSlotTarget = null },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "#$slot",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Speed Dial #$slot",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = "Key #$slot is not assigned. Would you like to assign a contact to this speed dial shortcut?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetSlot = slot
+                        promptAssignSlotTarget = null
+                        assignSpeedDialSlotTarget = targetSlot
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("assign_speed_dial_confirm_button")
+                ) {
+                    Text("Assign Contact", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = { speedDialActionSlotTarget = null }
-                    ) {
-                        Text("Cancel")
-                    }
-                    TextButton(
-                        onClick = {
-                            val targetSlot = slot
-                            speedDialActionSlotTarget = null
-                            onClearSpeedDialSlot(targetSlot)
-                            speedDialToast = "Cleared Speed Dial #$targetSlot"
-                        }
-                    ) {
-                        Text("Clear", color = MaterialTheme.colorScheme.error)
-                    }
-                    TextButton(
-                        onClick = {
-                            val targetSlot = slot
-                            speedDialActionSlotTarget = null
-                            assignSpeedDialSlotTarget = targetSlot
-                        }
-                    ) {
-                        Text("Reassign")
-                    }
-                }
+                Text(
+                    text = "Cancel",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .testTag("assign_speed_dial_cancel_action")
+                        .clickable { promptAssignSlotTarget = null }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
         )
     }

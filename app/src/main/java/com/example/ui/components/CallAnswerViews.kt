@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -280,156 +281,198 @@ fun SwipeSliderAnswerView(
     onDecline: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var sliderOffsetX by remember { mutableFloatStateOf(0f) }
-    val animatedOffsetX by animateFloatAsState(
-        targetValue = sliderOffsetX,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "slider_x"
-    )
+    val coroutineScope = rememberCoroutineScope()
+    val dragOffset = remember { Animatable(0f) }
+    var isDragging by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Horizontal Slider Track
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 380.dp)
-                .height(72.dp)
                 .padding(horizontal = 8.dp)
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val maxDragPx = with(density) {
+                ((maxWidth - 64.dp) / 2f - 4.dp).toPx().coerceAtLeast(100f)
+            }
+            val dragFraction = (dragOffset.value / maxDragPx).coerceIn(-1f, 1f)
+
+            // Horizontal Slider Track
+            Surface(
+                shape = CircleShape,
+                color = when {
+                    dragFraction > 0.15f -> Color(0xFF16A34A).copy(alpha = 0.15f + dragFraction * 0.2f)
+                    dragFraction < -0.15f -> Color(0xFFDC2626).copy(alpha = 0.15f + (-dragFraction) * 0.2f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+                },
+                border = BorderStroke(
+                    1.5.dp,
+                    when {
+                        dragFraction > 0.3f -> Color(0xFF16A34A).copy(alpha = 0.8f)
+                        dragFraction < -0.3f -> Color(0xFFDC2626).copy(alpha = 0.8f)
+                        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
             ) {
-                // Left End: Decline indicator
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 6.dp)
-                        .clickable { onDecline() }
-                        .testTag("incall_decline_button"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFFDC2626),
-                        modifier = Modifier.size(46.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.CallEnd,
-                                contentDescription = "Decline Call",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "‹ Decline",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFDC2626)
-                    )
-                }
-
-                // Right End: Answer indicator
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 6.dp)
-                        .clickable { onAnswer() }
-                        .testTag("incall_answer_button"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Answer ›",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF16A34A)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFF16A34A),
-                        modifier = Modifier.size(46.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Call,
-                                contentDescription = "Answer Call",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Draggable Center Slider Handle
                 Box(
-                    modifier = Modifier
-                        .offset { IntOffset(animatedOffsetX.roundToInt(), 0) }
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    if (sliderOffsetX > 90f) {
-                                        onAnswer()
-                                    } else if (sliderOffsetX < -90f) {
-                                        onDecline()
-                                    }
-                                    sliderOffsetX = 0f
-                                },
-                                onDragCancel = { sliderOffsetX = 0f },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    sliderOffsetX = (sliderOffsetX + dragAmount).coerceIn(-140f, 140f)
-                                    if (sliderOffsetX >= 115f) {
-                                        onAnswer()
-                                        sliderOffsetX = 0f
-                                    } else if (sliderOffsetX <= -115f) {
-                                        onDecline()
-                                        sliderOffsetX = 0f
-                                    }
-                                }
-                            )
-                        }
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = when {
-                            sliderOffsetX > 35f -> Color(0xFF16A34A)
-                            sliderOffsetX < -35f -> Color(0xFFDC2626)
-                            else -> MaterialTheme.colorScheme.primaryContainer
-                        },
-                        shadowElevation = 4.dp,
-                        border = BorderStroke(
-                            2.dp,
-                            when {
-                                sliderOffsetX > 35f -> Color(0xFF16A34A)
-                                sliderOffsetX < -35f -> Color(0xFFDC2626)
-                                else -> MaterialTheme.colorScheme.primary
-                            }
-                        ),
-                        modifier = Modifier.size(54.dp)
+                    // Left End: Decline indicator
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                            .clickable { onDecline() }
+                            .testTag("incall_decline_button"),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = when {
-                                    sliderOffsetX < -35f -> Icons.Default.CallEnd
-                                    else -> Icons.Default.Call
-                                },
-                                contentDescription = "Drag to Answer or Decline",
-                                tint = when {
-                                    sliderOffsetX > 35f || sliderOffsetX < -35f -> Color.White
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFDC2626),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.CallEnd,
+                                    contentDescription = "Decline Call",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "‹ Decline",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFDC2626),
+                            modifier = Modifier.alpha(if (dragFraction < -0.3f) 1f else 0.8f)
+                        )
+                    }
+
+                    // Right End: Answer indicator
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 8.dp)
+                            .clickable { onAnswer() }
+                            .testTag("incall_answer_button"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Answer ›",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF16A34A),
+                            modifier = Modifier.alpha(if (dragFraction > 0.3f) 1f else 0.8f)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF16A34A),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "Answer Call",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Draggable Center Slider Handle (Follows finger smoothly from center all the way to both ends)
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(dragOffset.value.roundToInt(), 0) }
+                            .pointerInput(maxDragPx) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = {
+                                        isDragging = true
+                                    },
+                                    onDragEnd = {
+                                        isDragging = false
+                                        val currentVal = dragOffset.value
+                                        val triggerThreshold = maxDragPx * 0.55f
+                                        if (currentVal >= triggerThreshold) {
+                                            coroutineScope.launch {
+                                                dragOffset.animateTo(maxDragPx, tween(150))
+                                                onAnswer()
+                                                dragOffset.snapTo(0f)
+                                            }
+                                        } else if (currentVal <= -triggerThreshold) {
+                                            coroutineScope.launch {
+                                                dragOffset.animateTo(-maxDragPx, tween(150))
+                                                onDecline()
+                                                dragOffset.snapTo(0f)
+                                            }
+                                        } else {
+                                            coroutineScope.launch {
+                                                dragOffset.animateTo(
+                                                    0f,
+                                                    spring(
+                                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                        stiffness = Spring.StiffnessMediumLow
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        isDragging = false
+                                        coroutineScope.launch {
+                                            dragOffset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                        }
+                                    },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        coroutineScope.launch {
+                                            val nextVal = (dragOffset.value + dragAmount).coerceIn(-maxDragPx, maxDragPx)
+                                            dragOffset.snapTo(nextVal)
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = when {
+                                dragFraction > 0.25f -> Color(0xFF16A34A)
+                                dragFraction < -0.25f -> Color(0xFFDC2626)
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            shadowElevation = if (isDragging) 8.dp else 4.dp,
+                            border = BorderStroke(
+                                2.dp,
+                                when {
+                                    dragFraction > 0.25f -> Color(0xFF16A34A)
+                                    dragFraction < -0.25f -> Color(0xFFDC2626)
                                     else -> MaterialTheme.colorScheme.primary
-                                },
-                                modifier = Modifier.size(28.dp)
-                            )
+                                }
+                            ),
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = when {
+                                        dragFraction < -0.25f -> Icons.Default.CallEnd
+                                        else -> Icons.Default.Call
+                                    },
+                                    contentDescription = "Slide to Answer or Decline",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }

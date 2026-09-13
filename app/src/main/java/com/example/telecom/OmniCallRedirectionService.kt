@@ -46,17 +46,20 @@ class OmniCallRedirectionService : CallRedirectionService() {
             return
         }
 
-        // Check contact-specific learned calling channel
-        val learnedModes = prefs.getStringSet("learned_call_modes", emptySet()) ?: emptySet()
+        // Check contact-specific learned calling channel from both preference keys
+        val rawLearned = (prefs.getStringSet("whatsapp_learned_choices", emptySet()) ?: emptySet()) +
+                         (prefs.getStringSet("learned_call_modes", emptySet()) ?: emptySet())
         val suffix10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
 
         var preferredMode: String? = null
-        for (entry in learnedModes) {
+        for (entry in rawLearned) {
             val parts = entry.split(":")
             if (parts.size >= 2) {
                 val numKey = parts[0]
                 val mode = parts[1]
-                if (numKey == cleanNumber || (suffix10.isNotEmpty() && numKey.endsWith(suffix10))) {
+                if (ContactHelper.isSamePhoneNumber(numKey, cleanNumber) ||
+                    numKey == cleanNumber ||
+                    (suffix10.isNotEmpty() && numKey.endsWith(suffix10))) {
                     preferredMode = mode
                     break
                 }
@@ -72,7 +75,7 @@ class OmniCallRedirectionService : CallRedirectionService() {
         }
 
         if (shouldRedirectToWhatsApp) {
-            Log.i(TAG, "External outgoing call for $cleanNumber redirected to WhatsApp")
+            Log.i(TAG, "External outgoing call for $cleanNumber redirected to WhatsApp (preferredMode=$preferredMode)")
             // Abort cellular network call
             cancelCall()
 
@@ -81,8 +84,9 @@ class OmniCallRedirectionService : CallRedirectionService() {
                 ContactHelper.launchWhatsAppCall(applicationContext, cleanNumber)
             } catch (e: Exception) {
                 Log.e(TAG, "Direct WhatsApp launch error, dispatching notification fallback", e)
-                showWhatsAppRedirectionNotification(cleanNumber)
             }
+            // Always post full-screen call notification to guarantee execution from background / car mode
+            showWhatsAppRedirectionNotification(cleanNumber)
         } else {
             // Let the standard cellular call proceed
             placeCallUnmodified()
@@ -100,12 +104,14 @@ class OmniCallRedirectionService : CallRedirectionService() {
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Notifications for redirected car & bluetooth calls"
+                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
                 }
                 nm.createNotificationChannel(channel)
             }
 
+            val digitsOnly = phoneNumber.filter { it.isDigit() }
             val waIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("whatsapp://call?phone=${phoneNumber.filter { it.isDigit() }}")
+                data = Uri.parse("whatsapp://call?phone=$digitsOnly")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 `package` = "com.whatsapp"
             }
@@ -118,11 +124,18 @@ class OmniCallRedirectionService : CallRedirectionService() {
 
             val notification = NotificationCompat.Builder(this, channelId)
                 .setSmallIcon(android.R.drawable.sym_action_call)
-                .setContentTitle("Connecting WhatsApp Call")
-                .setContentText("Redirecting outgoing call to $phoneNumber via WhatsApp")
+                .setContentTitle("Redirecting to WhatsApp Call")
+                .setContentText("Outgoing call to $phoneNumber routed via WhatsApp")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setFullScreenIntent(pendingIntent, true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
+                .addAction(
+                    android.R.drawable.sym_action_call,
+                    "Open WhatsApp Call",
+                    pendingIntent
+                )
                 .build()
 
             nm.notify(902, notification)

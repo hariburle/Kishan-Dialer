@@ -45,6 +45,10 @@ fun SettingsScreen(
     onRemoveSpam: (String) -> Unit,
     confirmFavoritesCall: Boolean,
     onSetConfirmFavoritesCall: (Boolean) -> Unit,
+    confirmSpeedDialCall: Boolean = true,
+    onSetConfirmSpeedDialCall: (Boolean) -> Unit = {},
+    askToAssignUnassignedSpeedDial: Boolean = true,
+    onSetAskToAssignUnassignedSpeedDial: (Boolean) -> Unit = {},
     defaultStartTab: Int,
     onSetDefaultStartTab: (Int) -> Unit,
     swipeToSwitchPanels: Boolean,
@@ -456,13 +460,30 @@ fun SettingsScreen(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
-            val isRedirectionActive = com.example.telecom.RoleHelper.isCallRedirectionRoleHeld(context) ||
-                    com.example.telecom.RoleHelper.isDefaultDialer(context)
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            var redirectionRoleHeld by remember {
+                mutableStateOf(com.example.telecom.RoleHelper.isCallRedirectionRoleHeld(context))
+            }
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        redirectionRoleHeld = com.example.telecom.RoleHelper.isCallRedirectionRoleHeld(context)
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             val callRedirectionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartActivityForResult()
-            ) { }
+            ) {
+                redirectionRoleHeld = com.example.telecom.RoleHelper.isCallRedirectionRoleHeld(context)
+            }
 
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -475,37 +496,88 @@ fun SettingsScreen(
                     )
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isRedirectionActive) Color(0xFF166534).copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                        color = if (redirectionRoleHeld) Color(0xFFDCFCE7) else Color(0xFFFEF3C7)
                     ) {
-                        Text(
-                            text = if (isRedirectionActive) "Active" else "Ready to Enable",
-                            color = if (isRedirectionActive) Color(0xFF15803D) else MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
+                        ) {
+                            Icon(
+                                imageVector = if (redirectionRoleHeld) Icons.Default.CheckCircle else Icons.Default.WarningAmber,
+                                contentDescription = null,
+                                tint = if (redirectionRoleHeld) Color(0xFF15803D) else Color(0xFFB45309),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = if (redirectionRoleHeld) "Active" else "Action Needed",
+                                color = if (redirectionRoleHeld) Color(0xFF15803D) else Color(0xFFB45309),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
-                Text(
-                    text = "When placing calls through Bluetooth vehicle infotainment systems (e.g. car head units), smartwatches, or external accessories, this service intercepts the outgoing call and routes it directly through WhatsApp if that is your preference for the contact.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
 
-                if (!isRedirectionActive && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                if (redirectionRoleHeld) {
+                    Text(
+                        text = "OmniDial is set as your system Call Redirection app. Outgoing calls placed from Bluetooth car systems, Android Auto, or smart accessories to contacts with WhatsApp preference will automatically route through WhatsApp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val intent = com.example.telecom.RoleHelper.createDefaultAppsSettingsIntent(context)
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open settings", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verify in Phone Settings", fontSize = 12.sp)
+                    }
+                } else {
+                    Text(
+                        text = "OmniDial is not set as your phone's Call Redirection app. When placing calls from a Bluetooth car system or Android Auto, Android requires granting the Call Redirection role to intercept calls and route them through WhatsApp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Button(
                         onClick = {
                             val intent = com.example.telecom.RoleHelper.createCallRedirectionRoleIntent(context)
-                                ?: com.example.telecom.RoleHelper.createDefaultDialerIntent(context)
                             if (intent != null) {
-                                callRedirectionLauncher.launch(intent)
+                                try {
+                                    callRedirectionLauncher.launch(intent)
+                                } catch (e: Exception) {
+                                    val fallback = com.example.telecom.RoleHelper.createDefaultAppsSettingsIntent(context)
+                                    callRedirectionLauncher.launch(fallback)
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.PhoneForwarded, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Grant Call Redirection Role", fontSize = 12.sp)
+                        Text("Set as Call Redirection App", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val intent = com.example.telecom.RoleHelper.createDefaultAppsSettingsIntent(context)
+                            try {
+                                callRedirectionLauncher.launch(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open settings", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Open System Default Apps Settings", fontSize = 12.sp)
                     }
                 }
             }
@@ -541,6 +613,50 @@ fun SettingsScreen(
                         checked = confirmFavoritesCall,
                         onCheckedChange = onSetConfirmFavoritesCall,
                         modifier = Modifier.testTag("confirm_favorites_call_switch")
+                    )
+                }
+
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Confirm Before Speed-Dialing", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = "Show confirmation dialog before calling when long-pressing keys (2–9)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = confirmSpeedDialCall,
+                        onCheckedChange = onSetConfirmSpeedDialCall,
+                        modifier = Modifier.testTag("confirm_speed_dial_call_switch")
+                    )
+                }
+
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Ask to Assign Unassigned Keys", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = "Prompt to assign a contact when long-pressing an unassigned keypad key (2–9)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = askToAssignUnassignedSpeedDial,
+                        onCheckedChange = onSetAskToAssignUnassignedSpeedDial,
+                        modifier = Modifier.testTag("ask_assign_speed_dial_switch")
                     )
                 }
 

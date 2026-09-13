@@ -93,7 +93,12 @@ object OngoingCallNotificationHelper {
 
         val isMuted = CallManager.isMuted.value
         val isSpeaker = CallManager.isSpeakerOn.value
-        val callerTitle = callInfo.displayName.ifBlank { callInfo.phoneNumber }
+        val callerTitle = buildString {
+            append(callInfo.displayName.ifBlank { callInfo.phoneNumber })
+            if (!callInfo.nickname.isNullOrBlank() && !callInfo.nickname.equals(callInfo.displayName, ignoreCase = true)) {
+                append(" (${callInfo.nickname})")
+            }
+        }
 
         val elapsedSec = if (callInfo.state == Call.STATE_ACTIVE && callInfo.connectTimeMillis > 0) {
             (System.currentTimeMillis() - callInfo.connectTimeMillis) / 1000
@@ -110,11 +115,12 @@ object OngoingCallNotificationHelper {
             else -> "Call"
         }
 
+        val labelPrefix = if (!callInfo.numberLabel.isNullOrBlank()) "${callInfo.numberLabel} • " else ""
         val contentText = when (callInfo.state) {
-            Call.STATE_ACTIVE -> "${callInfo.phoneNumber} • $timerFormatted"
-            Call.STATE_RINGING -> "Incoming call • ${callInfo.phoneNumber}"
-            Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling • ${callInfo.phoneNumber}"
-            else -> "${callInfo.phoneNumber} • $statusText"
+            Call.STATE_ACTIVE -> "$labelPrefix${callInfo.phoneNumber} • $timerFormatted"
+            Call.STATE_RINGING -> "Incoming call • $labelPrefix${callInfo.phoneNumber}"
+            Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling • $labelPrefix${callInfo.phoneNumber}"
+            else -> "$labelPrefix${callInfo.phoneNumber} • $statusText"
         }
 
         val isUiInFocus = CallManager.isCallUiForegrounded
@@ -288,7 +294,12 @@ object OngoingCallNotificationHelper {
 
         val isMuted = CallManager.isMuted.value
         val isSpeaker = CallManager.isSpeakerOn.value
-        val callerTitle = callInfo.displayName.ifBlank { callInfo.phoneNumber }
+        val callerTitle = buildString {
+            append(callInfo.displayName.ifBlank { callInfo.phoneNumber })
+            if (!callInfo.nickname.isNullOrBlank() && !callInfo.nickname.equals(callInfo.displayName, ignoreCase = true)) {
+                append(" (${callInfo.nickname})")
+            }
+        }
 
         val elapsedSec = if (callInfo.state == Call.STATE_ACTIVE && callInfo.connectTimeMillis > 0) {
             (System.currentTimeMillis() - callInfo.connectTimeMillis) / 1000
@@ -297,11 +308,12 @@ object OngoingCallNotificationHelper {
         val seconds = elapsedSec % 60
         val timerFormatted = String.format("%02d:%02d", minutes, seconds)
 
+        val labelPrefix = if (!callInfo.numberLabel.isNullOrBlank()) "${callInfo.numberLabel} • " else ""
         val statusText = when (callInfo.state) {
-            Call.STATE_RINGING -> "Incoming call"
-            Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling..."
+            Call.STATE_RINGING -> "Incoming call • $labelPrefix${callInfo.phoneNumber}"
+            Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling • $labelPrefix${callInfo.phoneNumber}"
             Call.STATE_ACTIVE -> "Active call • $timerFormatted"
-            Call.STATE_HOLDING -> "On hold"
+            Call.STATE_HOLDING -> "On hold • $labelPrefix${callInfo.phoneNumber}"
             else -> "Call"
         }
 
@@ -360,7 +372,9 @@ object OngoingCallNotificationHelper {
         val notificationId = (number.hashCode() and 0x7FFFFFFF) + 100
 
         val activityIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("EXTRA_INITIAL_TAB", 1)
             putExtra("EXTRA_NAV_TAB", "RECENTS")
             putExtra("EXTRA_NAV_TAB_INDEX", 1)
             putExtra("EXTRA_HIGHLIGHT_NUMBER", number)

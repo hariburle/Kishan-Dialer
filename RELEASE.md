@@ -46,13 +46,17 @@ Hosted directly on GitHub Pages under the `/docs` directory.
 ---
 
 ## 3. Creating New Releases
-1. Increment `versionCode` and `versionName` in `app/build.gradle.kts`.
-2. Build optimized release APK:
+1. Review the running work log in **`CHANGELOG.md`** under `[Unreleased]` for all user-facing changes and fixes made during development.
+2. Increment `versionCode` and `versionName` in `app/build.gradle.kts`.
+3. Build release APK:
    ```bash
    gradle :app:assembleRelease
    ```
-3. Copy the output APK to root `OmniDial.apk`:
+4. Copy the output APK to versioned files in root and `/docs`:
    ```bash
-   cp app/build/outputs/apk/release/app-release-unsigned.apk OmniDial.apk
+   cp app/build/outputs/apk/release/app-release-unsigned.apk OmniDial-v<version>.apk
+   cp OmniDial-v<version>.apk docs/OmniDial-v<version>.apk
+   cp OmniDial-v<version>.apk OmniDial.apk
+   cp OmniDial.apk docs/OmniDial.apk
    ```
-4. Update the changelog on `docs/index.html` and push to GitHub.
+5. Move `[Unreleased]` in `CHANGELOG.md` to the new version header, update `docs/index.html` & `index.html` release notes, and push to GitHub.

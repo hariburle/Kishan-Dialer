@@ -33,7 +33,25 @@ object RoleHelper {
     fun isCallRedirectionRoleHeld(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(RoleManager::class.java)
-            roleManager?.isRoleHeld(RoleManager.ROLE_CALL_REDIRECTION) == true
+            try {
+                roleManager?.isRoleHeld(RoleManager.ROLE_CALL_REDIRECTION) == true
+            } catch (e: Exception) {
+                android.util.Log.e("RoleHelper", "Failed to check ROLE_CALL_REDIRECTION", e)
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fun isCallRedirectionRoleAvailable(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            try {
+                roleManager?.isRoleAvailable(RoleManager.ROLE_CALL_REDIRECTION) == true
+            } catch (e: Exception) {
+                false
+            }
         } else {
             false
         }
@@ -42,9 +60,28 @@ object RoleHelper {
     fun createCallRedirectionRoleIntent(context: Context): Intent? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(RoleManager::class.java)
-            roleManager?.createRequestRoleIntent(RoleManager.ROLE_CALL_REDIRECTION)
+            try {
+                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_CALL_REDIRECTION)) {
+                    roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_REDIRECTION)
+                } else {
+                    createDefaultAppsSettingsIntent(context)
+                }
+            } catch (e: Exception) {
+                createDefaultAppsSettingsIntent(context)
+            }
         } else {
-            null
+            createDefaultAppsSettingsIntent(context)
+        }
+    }
+
+    fun createDefaultAppsSettingsIntent(context: Context): Intent {
+        val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+        return if (intent.resolveActivity(context.packageManager) != null) {
+            intent
+        } else {
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", context.packageName, null)
+            }
         }
     }
 }

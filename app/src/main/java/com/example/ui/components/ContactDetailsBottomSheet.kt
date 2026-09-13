@@ -160,7 +160,15 @@ fun ContactDetailsBottomSheet(
 
     // Current default/primary number for this contact - reactive to user changes
     var currentDefaultNumber by remember(favoriteContact?.phoneNumber, contact.phoneNumber) {
-        mutableStateOf(favoriteContact?.phoneNumber ?: contact.phoneNumber)
+        val favNum = favoriteContact?.phoneNumber
+        val initNum = if (contact.phoneNumber.isNotBlank()) {
+            contact.phoneNumber
+        } else if (favNum != null && ContactHelper.isSamePhoneNumber(favNum, contact.phoneNumber)) {
+            favNum
+        } else {
+            favNum ?: contact.phoneNumbers.firstOrNull()?.number ?: ""
+        }
+        mutableStateOf(initNum)
     }
     var numberForActionMenu by remember { mutableStateOf<ContactPhoneNumber?>(null) }
     val preferredModes = remember { mutableStateMapOf<String, String>() }
@@ -1038,8 +1046,12 @@ fun ContactDetailsBottomSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
+                                            val numberLabel = if (contact.phoneNumbers.size > 1) {
+                                                ContactHelper.getDescriptiveNumberLabel(contact, call.phoneNumber)
+                                            } else null
+
                                             Text(
-                                                text = "${dateFormat.format(Date(call.timestamp))} • ${call.phoneNumber}",
+                                                text = "${dateFormat.format(Date(call.timestamp))} • ${if (numberLabel != null) "[$numberLabel] " else ""}${call.phoneNumber}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )

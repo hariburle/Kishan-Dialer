@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <queries>
         <package android:name="com.whatsapp" />
@@ -75,6 +78,17 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
             </intent-filter>
+
+            <!-- Support system missed calls notification click and viewing call logs -->
+            <intent-filter>
+                <action android:name="android.telecom.action.SHOW_MISSED_CALLS_NOTIFICATION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="vnd.android.cursor.dir/calls" />
+            </intent-filter>
         </activity>
 
         <!-- Telecom InCallService declaration for default dialer UI & call handling -->
@@ -116,6 +130,16 @@
                 <action android:name="com.example.telecom.ACTION_TOGGLE_MUTE" />
                 <action android:name="com.example.telecom.ACTION_TOGGLE_SPEAKER" />
                 <action android:name="com.example.telecom.ACTION_UNSPAM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Follow-up Call Reminder Receiver -->
+        <receiver
+            android:name=".telecom.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.telecom.ACTION_FIRE_REMINDER" />
+                <action android:name="com.example.telecom.ACTION_DISMISS_REMINDER" />
             </intent-filter>
         </receiver>
 

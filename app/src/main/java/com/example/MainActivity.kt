@@ -128,7 +128,17 @@ class MainActivity : ComponentActivity() {
         CallManager.init(applicationContext)
         com.example.telecom.FlipToShhhManager.initialize(this)
 
-        val tabExtra = intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
+        val tabExtra = if (intent.getIntExtra("EXTRA_INITIAL_TAB", -1) != -1) {
+            intent.getIntExtra("EXTRA_INITIAL_TAB", 0)
+        } else if (intent.getStringExtra("EXTRA_NAV_TAB") == "RECENTS" || 
+            intent.getIntExtra("EXTRA_NAV_TAB_INDEX", -1) == 1 ||
+            intent.action == "android.telecom.action.SHOW_MISSED_CALLS_NOTIFICATION" ||
+            intent.type == "vnd.android.cursor.dir/calls"
+        ) {
+            1
+        } else {
+            0
+        }
         handleDialIntent(intent)
         viewModel.handleIncomingIntent(intent)
         if (intent.getBooleanExtra("EXTRA_IN_CALL", false)) {
@@ -173,11 +183,22 @@ class MainActivity : ComponentActivity() {
         CallManager.isCallUiForegrounded = true
         com.example.telecom.OngoingCallNotificationHelper.cancelCallNotification(this)
         viewModel.refreshDefaultDialerStatus()
+        viewModel.refreshCallRedirectionStatus()
         if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
             viewModel.refreshContacts()
         }
         if (checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
             viewModel.refreshRecentCalls()
+        }
+        if (com.example.telecom.RoleHelper.isDefaultDialer(this)) {
+            try {
+                val telecomManager = getSystemService(android.content.Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+                telecomManager?.cancelMissedCallsNotification()
+            } catch (e: SecurityException) {
+                Log.w("MainActivity", "SecurityException trying to cancel missed calls notification: ${e.message}")
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to cancel missed calls notification", e)
+            }
         }
     }
 
@@ -327,6 +348,8 @@ fun MainAppContent(
     val currentAudioRoute by viewModel.currentAudioRoute.collectAsStateWithLifecycle()
     val supportedAudioRoutes by viewModel.supportedAudioRoutes.collectAsStateWithLifecycle()
     val bluetoothDeviceName by viewModel.bluetoothDeviceName.collectAsStateWithLifecycle()
+    val availableBluetoothDevices by viewModel.availableBluetoothDevices.collectAsStateWithLifecycle()
+    val activeBluetoothDeviceAddress by viewModel.activeBluetoothDeviceAddress.collectAsStateWithLifecycle()
 
     val rules by viewModel.rules.collectAsStateWithLifecycle()
     val recentCalls by viewModel.recentCalls.collectAsStateWithLifecycle()
@@ -348,6 +371,8 @@ fun MainAppContent(
     val learnedCallModes by viewModel.learnedCallModes.collectAsStateWithLifecycle()
     val defaultStartTab by viewModel.defaultStartTab.collectAsStateWithLifecycle()
     val confirmFavoritesCall by viewModel.confirmFavoritesCall.collectAsStateWithLifecycle()
+    val confirmSpeedDialCall by viewModel.confirmSpeedDialCall.collectAsStateWithLifecycle()
+    val askToAssignUnassignedSpeedDial by viewModel.askToAssignUnassignedSpeedDial.collectAsStateWithLifecycle()
     val callAnswerStyle by viewModel.callAnswerStyle.collectAsStateWithLifecycle()
     val favoriteCardStyle by viewModel.favoriteCardStyle.collectAsStateWithLifecycle()
     val swipeToSwitchPanels by viewModel.swipeToSwitchPanels.collectAsStateWithLifecycle()
@@ -396,10 +421,11 @@ fun MainAppContent(
     }
 
     LaunchedEffect(pendingHighlightNumber) {
-        if (!pendingHighlightNumber.isNullOrBlank()) {
-            highlightNumber = pendingHighlightNumber
-            selectedTab = 1
-            pagerState.scrollToPage(1)
+        val num = pendingHighlightNumber
+        if (!num.isNullOrBlank()) {
+            highlightNumber = num
+            navigateToTab(1)
+            viewModel.clearPendingHighlight()
         }
     }
 
@@ -411,11 +437,17 @@ fun MainAppContent(
             val navTabIndex = currentIntent.getIntExtra("EXTRA_NAV_TAB_INDEX", -1)
             val highlightNum = currentIntent.getStringExtra("EXTRA_HIGHLIGHT_NUMBER")
             if (navTab == "RECENTS" || navTabIndex == 1) {
-                selectedTab = 1
+                navigateToTab(1)
                 if (!highlightNum.isNullOrBlank()) {
                     highlightNumber = highlightNum
                 }
             }
+        }
+    }
+
+    LaunchedEffect(initialTab) {
+        if (initialTab in 1..4) {
+            navigateToTab(initialTab)
         }
     }
 
@@ -464,6 +496,9 @@ fun MainAppContent(
             Manifest.permission.WRITE_CONTACTS,
             Manifest.permission.SEND_SMS
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -600,6 +635,7 @@ fun MainAppContent(
                         spamNumbers = spamNumbers,
                         favorites = favorites,
                         rules = rules,
+                        deviceContacts = deviceContacts,
                         highlightNumber = highlightNumber,
                         isSpamNumber = { num -> viewModel.isSpamNumber(num) },
                         getPreferredCallingMode = { num -> viewModel.getPreferredCallingMode(num) },
@@ -668,6 +704,8 @@ fun MainAppContent(
                         onClearSpeedDialSlot = { slot ->
                             viewModel.clearSpeedDialSlot(slot)
                         },
+                        confirmSpeedDialCall = confirmSpeedDialCall,
+                        askToAssignUnassignedSpeedDial = askToAssignUnassignedSpeedDial,
                         deviceContacts = deviceContacts
                     )
                     3 -> ContactsScreen(
@@ -735,6 +773,10 @@ fun MainAppContent(
                         onRemoveSpam = { viewModel.removeSpam(it) },
                         confirmFavoritesCall = confirmFavoritesCall,
                         onSetConfirmFavoritesCall = { viewModel.setConfirmFavoritesCall(it) },
+                        confirmSpeedDialCall = confirmSpeedDialCall,
+                        onSetConfirmSpeedDialCall = { viewModel.setConfirmSpeedDialCall(it) },
+                        askToAssignUnassignedSpeedDial = askToAssignUnassignedSpeedDial,
+                        onSetAskToAssignUnassignedSpeedDial = { viewModel.setAskToAssignUnassignedSpeedDial(it) },
                         defaultStartTab = defaultStartTab,
                         onSetDefaultStartTab = { viewModel.setDefaultStartTab(it) },
                         callAnswerStyle = callAnswerStyle,
@@ -781,7 +823,10 @@ fun MainAppContent(
                     audioRoute = currentAudioRoute,
                     supportedAudioRoutes = supportedAudioRoutes,
                     bluetoothDeviceName = bluetoothDeviceName,
+                    availableBluetoothDevices = availableBluetoothDevices,
+                    activeBluetoothDeviceAddress = activeBluetoothDeviceAddress,
                     onSelectAudioRoute = { route -> viewModel.setAudioRoute(route) },
+                    onSelectBluetoothDevice = { address -> viewModel.selectBluetoothDevice(address) },
                     onPlayDtmf = { viewModel.playDtmf(it) },
                     onStopDtmf = { viewModel.stopDtmf() },
                     onDeclineWithSms = { msg -> viewModel.declineWithSms(msg) },
@@ -1132,7 +1177,12 @@ private fun FloatingCallPill(
 
                 // Caller Name & Live Duration Subtitle
                 Column(modifier = Modifier.weight(1f)) {
-                    val displayName = callInfo.displayName.ifBlank { callInfo.phoneNumber }
+                    val displayName = buildString {
+                        append(callInfo.displayName.ifBlank { callInfo.phoneNumber })
+                        if (!callInfo.nickname.isNullOrBlank() && !callInfo.nickname.equals(callInfo.displayName, ignoreCase = true)) {
+                            append(" (${callInfo.nickname})")
+                        }
+                    }
                     Text(
                         text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
@@ -1154,11 +1204,12 @@ private fun FloatingCallPill(
                                     CircleShape
                                 )
                         )
+                        val labelPrefix = if (!callInfo.numberLabel.isNullOrBlank()) "${callInfo.numberLabel} • " else ""
                         Text(
                             text = if (callInfo.state == Call.STATE_ACTIVE) {
-                                "Active • $timerText"
+                                "${labelPrefix}Active • $timerText"
                             } else {
-                                timerText
+                                "${labelPrefix}$timerText"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 11.5.sp,

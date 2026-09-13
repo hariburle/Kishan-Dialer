@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import com.example.util.ContactHelper
+
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
@@ -116,6 +120,7 @@ fun CallLogScreen(
     onDeleteCall: (RecentCall) -> Unit = {},
     onDeleteCallsForNumber: (String) -> Unit = {},
     rules: List<com.example.data.CallerRule> = emptyList(),
+    deviceContacts: List<DeviceContact> = emptyList(),
     getPreferredCallingMode: (String) -> String = { "cellular" },
     onSaveLearnedCallMode: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
@@ -243,23 +248,17 @@ fun CallLogScreen(
         val groups = mutableListOf<GroupedCallLog>()
         if (recentCalls.isEmpty()) return@remember groups
 
-        fun normDigits(num: String): String = num.filter { it.isDigit() }.takeLast(10)
-
         var currentGroupCall = recentCalls[0]
         var currentCount = 1
 
         for (i in 1 until recentCalls.size) {
             val call = recentCalls[i]
-            val curNorm = normDigits(currentGroupCall.phoneNumber)
-            val callNorm = normDigits(call.phoneNumber)
-            val isSameNumber = if (curNorm.isNotBlank() && callNorm.isNotBlank()) curNorm == callNorm else call.phoneNumber == currentGroupCall.phoneNumber
+            val isSameNumber = ContactHelper.isSamePhoneNumber(call.phoneNumber, currentGroupCall.phoneNumber)
             if (isSameNumber && call.callType == currentGroupCall.callType) {
                 currentCount++
             } else {
-                val curDigits = normDigits(currentGroupCall.phoneNumber)
                 val spam = spamNumbers.firstOrNull { s ->
-                    val sDigits = normDigits(s.phoneNumber)
-                    s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
+                    ContactHelper.isSamePhoneNumber(s.phoneNumber, currentGroupCall.phoneNumber)
                 }
                 val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (spam != null)
                 groups.add(GroupedCallLog(currentGroupCall, currentCount, isSpam, spam))
@@ -267,10 +266,8 @@ fun CallLogScreen(
                 currentCount = 1
             }
         }
-        val curDigits = normDigits(currentGroupCall.phoneNumber)
         val lastSpam = spamNumbers.firstOrNull { s ->
-            val sDigits = normDigits(s.phoneNumber)
-            s.phoneNumber == currentGroupCall.phoneNumber || (curDigits.length >= 7 && sDigits == curDigits)
+            ContactHelper.isSamePhoneNumber(s.phoneNumber, currentGroupCall.phoneNumber)
         }
         val isSpam = isSpamNumber?.invoke(currentGroupCall.phoneNumber) ?: (lastSpam != null)
         groups.add(GroupedCallLog(currentGroupCall, currentCount, isSpam, lastSpam))
@@ -320,6 +317,13 @@ fun CallLogScreen(
         }
     }
 
+    androidx.compose.runtime.LaunchedEffect(highlightNumber) {
+        if (!highlightNumber.isNullOrBlank()) {
+            searchQuery = ""
+            selectedFilter = "ALL"
+        }
+    }
+
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     androidx.compose.runtime.LaunchedEffect(highlightNumber, filteredGroupedCalls) {
@@ -327,7 +331,7 @@ fun CallLogScreen(
             val targetDigits = highlightNumber.filter { it.isDigit() }.takeLast(10)
             val index = filteredGroupedCalls.indexOfFirst {
                 val callDigits = it.primaryCall.phoneNumber.filter { c -> c.isDigit() }.takeLast(10)
-                callDigits == targetDigits || it.primaryCall.phoneNumber == highlightNumber
+                (targetDigits.isNotBlank() && callDigits == targetDigits) || it.primaryCall.phoneNumber == highlightNumber
             }
             if (index >= 0) {
                 listState.animateScrollToItem(index)
@@ -431,16 +435,50 @@ fun CallLogScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     itemsIndexed(filteredGroupedCalls, key = { index, group -> "${group.primaryCall.id}_${group.primaryCall.timestamp}_$index" }) { _, group ->
-                val callDigits = group.primaryCall.phoneNumber.filter { it.isDigit() }.takeLast(10)
+                val call = group.primaryCall
                 val isFav = favorites.any { fav ->
-                    val favDigits = fav.phoneNumber.filter { it.isDigit() }.takeLast(10)
-                    (callDigits.length >= 7 && favDigits == callDigits) ||
-                    (!group.primaryCall.callerName.isNullOrBlank() && fav.name.equals(group.primaryCall.callerName, ignoreCase = true))
+                    ContactHelper.isSamePhoneNumber(fav.phoneNumber, call.phoneNumber)
                 }
+                val matchedDc = remember(call.phoneNumber, call.callerName, deviceContacts) {
+                    deviceContacts.firstOrNull { dc ->
+                        ContactHelper.isSamePhoneNumber(dc.phoneNumber, call.phoneNumber) ||
+                        dc.phoneNumbers.any { ContactHelper.isSamePhoneNumber(it.number, call.phoneNumber) }
+                    } ?: if (!call.callerName.isNullOrBlank()) {
+                        deviceContacts.firstOrNull { it.name.equals(call.callerName, ignoreCase = true) }
+                    } else null
+                }
+                val hasMultipleNumbers = remember(matchedDc, call.callerName, call.phoneNumber, recentCalls) {
+                    if (matchedDc != null) {
+                        val hasMultipleInContact = matchedDc.phoneNumbers.size > 1
+                        val numberNotInContact = matchedDc.phoneNumbers.none {
+                            ContactHelper.isSamePhoneNumber(it.number, call.phoneNumber)
+                        }
+                        if (hasMultipleInContact || numberNotInContact) {
+                            return@remember true
+                        }
+                    }
+                    if (!call.callerName.isNullOrBlank()) {
+                        val distinctCount = recentCalls
+                            .filter { it.callerName?.equals(call.callerName, ignoreCase = true) == true }
+                            .map { it.phoneNumber }
+                            .distinctBy { ContactHelper.normalizeToLocalDigits(it) }
+                            .size
+                        if (distinctCount > 1) {
+                            return@remember true
+                        }
+                    }
+                    false
+                }
+                val numberLabel = remember(matchedDc, call.phoneNumber) {
+                    ContactHelper.getDescriptiveNumberLabel(matchedDc, call.phoneNumber)
+                }
+
                 CallLogItem(
                     group = group,
                     isFavorite = isFav,
                     highlightNumber = highlightNumber,
+                    hasMultipleNumbers = hasMultipleNumbers,
+                    numberLabel = numberLabel,
                     onCallBack = { onCallBack(group.primaryCall.phoneNumber) },
                     onCreateRule = { onCreateRuleForNumber(group.primaryCall.phoneNumber) },
                     onOpenNoteDialog = { target ->
@@ -469,7 +507,17 @@ fun CallLogScreen(
                     onOpenDetails = {
                         val call = group.primaryCall
                         val contactName = call.callerName?.ifBlank { null } ?: call.phoneNumber
-                        val dc = DeviceContact(
+                        val resolvedDc = deviceContacts.firstOrNull { dc ->
+                            ContactHelper.isSamePhoneNumber(dc.phoneNumber, call.phoneNumber) ||
+                            dc.phoneNumbers.any { ContactHelper.isSamePhoneNumber(it.number, call.phoneNumber) }
+                        }?.let { dc ->
+                            val matchedItem = dc.phoneNumbers.firstOrNull { ContactHelper.isSamePhoneNumber(it.number, call.phoneNumber) }
+                            if (matchedItem != null) {
+                                dc.copy(phoneNumber = matchedItem.number, label = matchedItem.label)
+                            } else {
+                                dc
+                            }
+                        } ?: DeviceContact(
                             name = contactName,
                             phoneNumber = call.phoneNumber,
                             label = "Mobile",
@@ -477,10 +525,9 @@ fun CallLogScreen(
                             phoneNumbers = listOf(ContactPhoneNumber(call.phoneNumber, "Mobile"))
                         )
                         val matchedFav = favorites.firstOrNull { fav ->
-                            fav.phoneNumber == call.phoneNumber ||
-                            (!call.callerName.isNullOrBlank() && fav.name.equals(call.callerName, ignoreCase = true))
+                            ContactHelper.isSamePhoneNumber(fav.phoneNumber, call.phoneNumber)
                         }
-                        contactDetailsTarget = Pair(dc, matchedFav)
+                        contactDetailsTarget = Pair(resolvedDc, matchedFav)
                     },
                     onDeleteCall = { onDeleteCall(group.primaryCall) },
                     onDeleteCallsForNumber = { onDeleteCallsForNumber(group.primaryCall.phoneNumber) }
@@ -497,6 +544,8 @@ private fun CallLogItem(
     group: GroupedCallLog,
     isFavorite: Boolean,
     highlightNumber: String? = null,
+    hasMultipleNumbers: Boolean = false,
+    numberLabel: String = "Mobile",
     onCallBack: () -> Unit,
     onCreateRule: () -> Unit,
     onOpenNoteDialog: (RecentCall) -> Unit,
@@ -741,7 +790,38 @@ private fun CallLogItem(
                         }
                     }
 
-                    // Line 2: Time + Duration + Note Indicator
+                    // Line 1.5: Specific Phone Number and Label if contact has multiple numbers
+                    if (hasMultipleNumbers && !call.callerName.isNullOrBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.padding(vertical = 1.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                            ) {
+                                Text(
+                                    text = numberLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                )
+                            }
+                            Text(
+                                text = call.phoneNumber,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Line 2: Time + Duration + Rules
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -783,13 +863,72 @@ private fun CallLogItem(
                                 )
                             }
                         }
-                        if (!call.note.isNullOrBlank()) {
-                            Icon(
-                                imageVector = Icons.Default.Notes,
-                                contentDescription = "Note attached",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(13.dp)
-                            )
+                    }
+
+                    val noteToShow = call.note
+                    val reminderToShow = call.reminderTime
+
+                    // Note Display in Recents
+                    if (!noteToShow.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 3.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notes,
+                                    contentDescription = "Note",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = noteToShow,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    // Scheduled Reminder Badge
+                    if (reminderToShow != null && reminderToShow > System.currentTimeMillis()) {
+                        val minsLeft = ((reminderToShow - System.currentTimeMillis()) / (60 * 1000)).coerceAtLeast(1)
+                        val reminderText = if (minsLeft < 60) "Reminder in ${minsLeft}m" else "Reminder in ${minsLeft / 60}h ${minsLeft % 60}m"
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Alarm,
+                                    contentDescription = "Follow-up Reminder",
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = reminderText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
                         }
                     }
                 }

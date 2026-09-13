@@ -14,25 +14,17 @@ OmniDial uses **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 
 ## Release 1.1.0 Change Log
 
-### Enhancements & New Features:
-- **Keypad 2x2 Call Action Grid**:
-  - Replaced scrolling carousels with an elegant, non-interfering 2x2 action grid (`Text Message`, `Phone`, `WhatsApp - Msg`, `WhatsApp - Voice`).
-  - **Adaptive Preference Highlighting**: Dynamically highlights preferred communication channels using clean, high-contrast borders and subtle background tints based on learned caller intelligence, avoiding clutter from intrusive badge tags.
-- **Dark Mode WhatsApp Icon Contrast**:
-  - Enhanced vector rendering with a clean, high-contrast outer contour ring around the bubble.
-  - Prevents the green bubble from blending with dark backgrounds in dark mode, maintaining balanced icon sizing across all screens.
-- **External Outgoing Call Redirection Service**:
-  - Intercepts outgoing calls initiated from Bluetooth car head units, smartwatches, and third-party dialers (`OmniCallRedirectionService`) to automatically route calls over WhatsApp VoIP when preferred.
-- **Favorites UX & Default Number Selection**:
-  - Explicit per-number selection for contacts with multiple phone numbers, allowing users to designate the specific number for instant dialing.
-  - Handled back button navigation via `BackHandler` on Favorites and Contacts screens.
-- **Contact Nickname Bi-directional Sync**:
-  - Full two-way synchronization of nicknames between Android device contacts (`ContactsContract.CommonDataKinds.Nickname`) and the local database.
-  - Displays contact nicknames prominently across favorites with official names subtitled.
+### What's New:
+- **Cleaner 4-Button Dial Pad**: Quickly reach anyone with 4 organized buttons on your dial pad: Send Text, Regular Phone Call, WhatsApp Message, or WhatsApp Voice Call.
+- **Smart Call Suggestions**: The app gently highlights how you usually contact each person, so you never have to remember whether to call on WhatsApp or regular mobile.
+- **Car Bluetooth & Hands-Free Calling**: Making calls from your car dashboard, smartwatch, or Bluetooth headset now automatically routes through WhatsApp when that's your preferred channel for that contact.
+- **Choose Default Numbers for Favorites**: When starring a contact who has multiple numbers (like home, work, and mobile), you can easily choose the exact number to dial by default.
+- **Easier to See in Dark Mode**: WhatsApp icons and buttons now feature crisp, high-contrast outlines so they stand out clearly on dark backgrounds.
+- **Friendlier Nicknames**: Add personal nicknames that appear front-and-center on your favorites grid, with official legal names neatly subtitled below.
 
-### Bug Fixes:
-- **WhatsApp Call Confirmation**: Fixed an issue where clicking the WhatsApp call button on favorite cards bypassed the confirmation dialog, and fixed the confirmation dialog confirming cellular calls even when WhatsApp was requested.
-- **External Hands-Free / Bluetooth Routing**: Solved outgoing calls initiated via vehicle head units bypassing app preferences by implementing the system `CallRedirectionService`.
+### Improvements & Fixes:
+- **Reliable WhatsApp Call Confirmations**: Fixed an issue where tapping WhatsApp call on favorite cards could accidentally place a regular cellular call or skip confirmation.
+- **Smoother Navigation**: Pressing the Android back button when searching favorites or contacts now cleanly dismisses the search bar rather than exiting the app.
 
 ---
 
